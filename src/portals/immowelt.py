@@ -12,7 +12,7 @@ import httpx
 import lzstring
 
 from src.client import fetch
-from src.models import Listing
+from src.models import Listing, parse_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +149,7 @@ async def search(
 
         # Metadata dates
         metadata = item.get("metadata", {})
-        published_at = metadata.get("creationDate", "")
+        published_at = parse_datetime(metadata.get("creationDate", ""))
 
         # Images from gallery
         images: list[str] = []

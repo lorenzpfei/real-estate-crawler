@@ -36,12 +36,18 @@ logger = logging.getLogger(__name__)
 
 async def _process_listings(listings: list[Listing]) -> int:
     """Store new listings and return the count of newly added entries."""
+    # Filter out "Suche" listings (people posting wanted ads as offers)
+    _SKIP_PREFIXES = ("suche ", "suchen ", "ich suche", "wir suche", "familie sucht", "paar sucht")
     new_count = 0
     for listing in listings:
+        if listing.title and listing.title.lower().startswith(_SKIP_PREFIXES):
+            continue
         if not database.exists(listing.id):
-            # Calculate price_per_sqm if missing but derivable
-            if listing.price_per_sqm is None and listing.price and listing.living_space:
-                listing.price_per_sqm = round(listing.price / listing.living_space, 2)
+            # Calculate price_per_sqm: cold rent for rentals, price for purchases
+            if listing.price_per_sqm is None and listing.living_space:
+                base = listing.cold_rent if listing.listing_type == "rent" else listing.price
+                if base:
+                    listing.price_per_sqm = round(base / listing.living_space, 2)
             database.insert(listing)
             logger.info(
                 "NEW: [%s] %s – %s → %s",

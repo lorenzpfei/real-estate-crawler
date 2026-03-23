@@ -11,7 +11,7 @@ import re
 import httpx
 
 from src.client import fetch, post
-from src.models import Listing
+from src.models import Listing, parse_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -251,7 +251,7 @@ async def search(
                 district = parts[2]
 
         is_private = item.get("isPrivate")
-        published_at = item.get("published", "")
+        published_at = parse_datetime(item.get("published", ""))
         url = f"https://www.immobilienscout24.de/expose/{listing_id}"
 
         # Fetch expose detail

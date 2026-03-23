@@ -5,7 +5,7 @@ import logging
 import httpx
 
 from src.client import fetch
-from src.models import Listing
+from src.models import Listing, parse_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +118,7 @@ async def search(
         is_private = poster_type == "PRIVATE" if poster_type else None
 
         # Published date
-        published_at = ad.get("start-date-time", {}).get("value", "")
+        published_at = parse_datetime(ad.get("start-date-time", {}).get("value", ""))
 
         # Images
         images: list[str] = []

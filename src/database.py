@@ -63,9 +63,10 @@ def init_db() -> None:
                 heating_type          TEXT DEFAULT '',
 
                 is_private            BOOLEAN,
-                published_at          TEXT DEFAULT '',
+                published_at          TIMESTAMPTZ,
                 images                TEXT[] DEFAULT '{}',
 
+                sent_at               TIMESTAMPTZ,
                 timestamp             TIMESTAMPTZ NOT NULL
             )
             """
