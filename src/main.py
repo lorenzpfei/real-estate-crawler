@@ -4,6 +4,9 @@ import asyncio
 import logging
 import random
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from src import database
 from src.client import build_client
 from src.models import Listing
