@@ -3,8 +3,8 @@ services:
     build: .
     container_name: immo-scraper
     restart: unless-stopped
-    volumes:
-      - ./data:/app/data
+    env_file:
+      - .env
     environment:
       # Proxy (optional)
       # PROXY_URL: http://user:pass@proxy:port
