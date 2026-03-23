@@ -36,13 +36,10 @@ async def _process_listings(listings: list[Listing]) -> int:
     new_count = 0
     for listing in listings:
         if not database.exists(listing.id):
-            database.insert(
-                listing_id=listing.id,
-                portal=listing.portal,
-                title=listing.title,
-                price=listing.price,
-                url=listing.url,
-            )
+            # Calculate price_per_sqm if missing but derivable
+            if listing.price_per_sqm is None and listing.price and listing.living_space:
+                listing.price_per_sqm = round(listing.price / listing.living_space, 2)
+            database.insert(listing)
             logger.info(
                 "NEW: [%s] %s – %s → %s",
                 listing.portal,

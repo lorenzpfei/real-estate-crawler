@@ -33,6 +33,19 @@ _FETCHER_RE = re.compile(
     re.DOTALL,
 )
 
+_PRICE_RE = re.compile(r"[\d.,]+")
+
+
+def _parse_price(price_str: str) -> float | None:
+    match = _PRICE_RE.search(price_str)
+    if not match:
+        return None
+    raw = match.group().replace(".", "").replace(",", ".")
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
 
 def _extract_classifieds(html: str) -> list[dict]:
     """Extract listings from the HTML."""
@@ -40,7 +53,6 @@ def _extract_classifieds(html: str) -> list[dict]:
     if not match:
         raise ValueError("__UFRN_FETCHER__ script not found")
 
-    # Double-escaped JSON: unicode_escape first, then parse JSON
     raw = match.group(1).encode().decode("unicode_escape")
     fetcher = json.loads(raw)
 
@@ -60,6 +72,14 @@ def _extract_classifieds(html: str) -> list[dict]:
     if isinstance(classifieds_data, list):
         return classifieds_data
     return []
+
+
+def _get_fact(facts: list[dict], fact_type: str) -> str:
+    """Get a fact value by type from the facts list."""
+    for fact in facts:
+        if fact.get("type") == fact_type:
+            return fact.get("splitValue", "")
+    return ""
 
 
 async def search(
@@ -86,6 +106,8 @@ async def search(
         logger.warning("Immowelt: %s", e)
         return []
 
+    is_rent = "Rent" in distribution_types
+
     listings: list[Listing] = []
     for item in items:
         listing_id = item.get("id", "")
@@ -94,8 +116,49 @@ async def search(
 
         hard_facts = item.get("hardFacts", {})
         title = hard_facts.get("title", "")
-        price = hard_facts.get("price", {}).get("value", "")
 
+        # Price
+        price_str = hard_facts.get("price", {}).get("value", "")
+        price = _parse_price(price_str)
+
+        # Price per sqm from additionalInformation
+        ppsqm_str = hard_facts.get("price", {}).get("additionalInformation", "")
+        price_per_sqm = _parse_price(ppsqm_str) if ppsqm_str else None
+
+        # Facts (rooms, living space, plot space)
+        facts = hard_facts.get("facts", [])
+        rooms = _parse_price(_get_fact(facts, "numberOfRooms"))
+        living_space = _parse_price(_get_fact(facts, "livingSpace"))
+        plot_space = _parse_price(_get_fact(facts, "plotSpace"))
+
+        # Location
+        loc = item.get("location", {}).get("address", {})
+        city = loc.get("city", "")
+        zip_code = loc.get("zipCode", "")
+        district = loc.get("district", "")
+
+        # Description
+        description = item.get("mainDescription", "")
+
+        # Energy class
+        energy_class = item.get("energyClass", "")
+
+        # Private or professional
+        provider_type = item.get("type", "")
+        is_private = provider_type == "PRIVATE" if provider_type else None
+
+        # Metadata dates
+        metadata = item.get("metadata", {})
+        published_at = metadata.get("creationDate", "")
+
+        # Images from gallery
+        images: list[str] = []
+        for img in item.get("gallery", {}).get("images", []):
+            img_url = img.get("url", "")
+            if img_url:
+                images.append(img_url)
+
+        # URL
         raw_url = item.get("url", "")
         if raw_url.startswith("http"):
             url = raw_url
@@ -109,8 +172,22 @@ async def search(
                 id=f"iw-{listing_id}",
                 portal="immowelt",
                 title=title,
-                price=price,
                 url=url,
+                price=price,
+                cold_rent=price if is_rent else None,
+                price_per_sqm=price_per_sqm,
+                rooms=rooms,
+                living_space=living_space,
+                plot_space=plot_space,
+                listing_type="rent" if is_rent else "buy",
+                city=city,
+                zip_code=zip_code,
+                district=district,
+                description=description,
+                energy_class=energy_class,
+                is_private=is_private,
+                published_at=published_at,
+                images=images,
             )
         )
 
