@@ -36,11 +36,15 @@ logger = logging.getLogger(__name__)
 
 async def _process_listings(listings: list[Listing]) -> int:
     """Store new listings and return the count of newly added entries."""
-    # Filter out "Suche" listings (people posting wanted ads as offers)
+    # Filter out unwanted listings
     _SKIP_PREFIXES = ("suche ", "suchen ", "ich suche", "wir suche", "familie sucht", "paar sucht")
+    _SKIP_KEYWORDS = ("zwischenmiete",)
     new_count = 0
     for listing in listings:
-        if listing.title and listing.title.lower().startswith(_SKIP_PREFIXES):
+        title_lower = listing.title.lower() if listing.title else ""
+        if title_lower.startswith(_SKIP_PREFIXES):
+            continue
+        if any(kw in title_lower for kw in _SKIP_KEYWORDS):
             continue
         if not database.exists(listing.id):
             # Calculate price_per_sqm: cold rent for rentals, price for purchases
