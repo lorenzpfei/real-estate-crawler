@@ -242,13 +242,18 @@ async def search(
         city, zip_code, street, district = "", "", "", ""
         if addr_line:
             parts = [p.strip() for p in addr_line.split(",")]
-            if len(parts) >= 2:
-                street = parts[0]
-                zip_city = parts[1].split(" ", 1)
-                if len(zip_city) == 2:
-                    zip_code, city = zip_city
-            if len(parts) >= 3:
-                district = parts[2]
+            # Find the part that contains a zip code (5 digits)
+            import re as _re
+            for i, part in enumerate(parts):
+                zip_match = _re.search(r"\b(\d{5})\b", part)
+                if zip_match:
+                    zip_code = zip_match.group(1)
+                    city = part.replace(zip_code, "").strip()
+                    # Everything before this part is the street
+                    street = ", ".join(parts[:i]).strip()
+                    # Everything after is the district
+                    district = ", ".join(parts[i+1:]).strip()
+                    break
 
         is_private = item.get("isPrivate")
         published_at = parse_datetime(item.get("published", ""))

@@ -1,0 +1,212 @@
+{
+  "name": "Immo Crawler Notify",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "trigger-1",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [1200, 1400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM apartments\nWHERE sent_at IS NULL\n  AND listing_type = 'rent'\n  AND (rooms >= 3 OR rooms IS NULL)\n  AND (living_space >= 76 OR living_space IS NULL)\n  AND (COALESCE(warm_rent, cold_rent + COALESCE(extra_costs, living_space * 4, 0)) <= 1650\n       OR (warm_rent IS NULL AND cold_rent IS NULL))\n  AND (zip_code NOT IN ('97084', '97078') OR zip_code IS NULL OR zip_code = '')\nORDER BY timestamp DESC\nLIMIT 10",
+        "options": {}
+      },
+      "id": "postgres-1",
+      "name": "Get New Listings",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1440, 1400],
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "Supabase Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "if (!items || items.length === 0 || !items[0].json.id) {\n  return [];\n}\nreturn items;"
+      },
+      "id": "check-results",
+      "name": "Has Results?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1660, 1400]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Du bist ein kritischer Immobilien-Scout für einen Klienten in Würzburg.\nDein Ziel: Finde \"Perlen\" (Charme, klein, familiär) und filtere \"Wohnbunker\" gnadenlos aus.\n\nANALYSIERE FOLGENDES LISTING:\n{{ JSON.stringify($json) }}\n\nDEINE ENTSCHEIDUNGS-LOGIK:\n\n1. HARD FILTER (K.O. Kriterien):\n   - Balkon/Terrasse/Loggia/Garten: MUSS vorhanden sein. Wenn nein -> is_relevant: false.\n   - Zimmer: Sollte >= 3 sein\n\n2. VIBE SCORE (1-10) - \"Keine großen Blöcke\":\n   - Suche im Text nach Hinweisen auf die Gebäudegröße.\n   - SCORE 1-3 (Aussortieren): Wörter wie \"Wohnanlage\", \"Hochhaus\", \"Anlage\", \"Aufzug bis in TG\" (oft Indiz für Großkomplex), \"Hausmeisterservice vor Ort\", \"Etage > 4\". Auch Stadtteile wie \"Heuchelhof\" oder \"Lindleinsmühle\" kritisch prüfen (oft Plattenbau).\n   - SCORE 4-6 (Neutral): Normales Mehrfamilienhaus (MFH), \"gepflegtes Stadthaus\".\n   - SCORE 7-10 (Traum): \"Zweifamilienhaus\", \"Villa\", \"Altbau\", \"Denkmal\", \"Einliegerwohnung\", \"nur 3 Parteien\", \"Dachgeschoss\" (ohne Aufzug deutet oft auf kleines Haus hin).\n\nMax. 1.65k EUR warm. Score < 7, max 1.3k, sonst aussortieren. Wenn nur kalt angegeben ist, rechne 4 EUR pro qm drauf um die Warmmiete zu errechnen.\n\n97070, 97072, 97074: Altstadt, Frauenland, Keesburg, Mönchberg, Gartenstadt.\n97076: Norden (z.B. Sanderau, Steinbachtal).\n97078: Lindleinsmühle, Versbach.\n97080: Dürrbachtal (Oberdürrbach, Unterdürrbach).\n97082: Zellerau, Steinbachtal.\n97084: Heuchelhof, Rottenbauer.\n\nZiehe 1 Punkt ab, wenn Zellerau (Wenn Parkplatz dabei, kein Abzug), bei Heuchelhof, Rottenbauer, Lindleinsmühle, Versbach bitte komplett aussortieren, 2 Abzug bei Grombühl (Wenn Parkplatz dabei, kein Abzug). Hubland + 1 Punkt.\n\nOUTPUT FORMAT (Antworte NUR mit diesem JSON):\n{\n  \"is_relevant\": boolean,\n  \"score\": number,\n  \"highlights\": [\"string\", \"string\", \"string\"],\n  \"reject_reason\": \"string oder null\"\n}\n\nhighlights: 3-5 kurze Bulletpoints (max 8 Wörter pro Punkt) die die wichtigsten Fakten und deine Einschätzung zusammenfassen. Z.B. [\"Altbau mit Dielenboden\", \"Balkon + Garten\", \"Nur 4 Parteien im Haus\", \"Sanderau – top Lage\"]\nreject_reason: Wenn is_relevant=false, kurze Begründung warum (z.B. \"Kein Balkon\", \"Zu teuer (1.8k warm)\", \"Wohnblock 8. OG\"). Wenn is_relevant=true, null."
+      },
+      "id": "llm-chain-1",
+      "name": "AI Score",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [1900, 1400]
+    },
+    {
+      "parameters": {
+        "model": "gpt-5.4",
+        "options": {}
+      },
+      "id": "openai-1",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [1900, 1620],
+      "credentials": {
+        "openAiApi": {
+          "id": "q5tEv9uJoA1hg6o1",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const listings = $('Has Results?').all();\n\nreturn items.map((item, index) => {\n  const original = listings[index]?.json || {};\n\n  if (typeof original.images === 'string' && original.images.startsWith('{')) {\n    original.images = original.images.slice(1, -1).split(',').filter(u => u);\n  }\n\n  try {\n    const rawString = item.json.text || item.json.output;\n    const cleanString = rawString.replace(/```json|```/g, '').trim();\n    const aiData = JSON.parse(cleanString);\n\n    const bullets = (aiData.highlights || []).map(h => `• ${h}`).join('\\n');\n\n    const d = { ...original, ...aiData };\n    const price = d.warm_rent || d.cold_rent || d.price || '?';\n    const loc = [d.city, d.zip_code, d.district].filter(Boolean).join(' ');\n\n    d.tg_message = [\n      `🏠 *${(d.title || '').replace(/[_*[\\]()~`>#+\\-=|{}.!]/g, '\\\\$&')}*`,\n      `📍 ${loc}`,\n      '',\n      `💶 ${price} € warm`,\n      `🚪 ${d.rooms || '?'} Zi  \\\\|  📐 ${d.living_space || '?'} m²`,\n      `⭐ *Score: ${d.score}/10*`,\n      '',\n      bullets.replace(/[_*[\\]()~`>#+\\-=|{}.!]/g, '\\\\$&'),\n      '',\n      `🔗 [Anzeige öffnen \\\\(${d.portal}\\\\)](${d.url})`,\n    ].join('\\n');\n\n    return { json: d };\n  } catch (error) {\n    return { json: { ...original, is_relevant: false, score: 0, reject_reason: 'AI parse error', tg_message: 'Error' } };\n  }\n});"
+      },
+      "id": "parse-ai-1",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2140, 1400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "filter-relevant",
+              "leftValue": "={{ $json.is_relevant }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-1",
+      "name": "If Relevant",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [2380, 1400]
+    },
+    {
+      "parameters": {
+        "chatId": "534476821",
+        "text": "={{ $json.tg_message }}",
+        "additionalFields": {
+          "parse_mode": "MarkdownV2"
+        }
+      },
+      "id": "telegram-1",
+      "name": "Send Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [2620, 1300],
+      "credentials": {
+        "telegramApi": {
+          "id": "mMwuIYtwCPuZOAtg",
+          "name": "Immo Butler"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE apartments SET sent_at = NOW() WHERE id = '{{ $json.id }}'",
+        "options": {}
+      },
+      "id": "update-sent-1",
+      "name": "Mark as Sent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [2860, 1300],
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "Supabase Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE apartments SET sent_at = NOW() WHERE id = '{{ $json.id }}'",
+        "options": {}
+      },
+      "id": "update-rejected-1",
+      "name": "Mark Rejected as Sent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [2620, 1540],
+      "credentials": {
+        "postgres": {
+          "id": "",
+          "name": "Supabase Postgres"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [[{"node": "Get New Listings", "type": "main", "index": 0}]]
+    },
+    "Get New Listings": {
+      "main": [[{"node": "Has Results?", "type": "main", "index": 0}]]
+    },
+    "Has Results?": {
+      "main": [[{"node": "AI Score", "type": "main", "index": 0}]]
+    },
+    "AI Score": {
+      "main": [[{"node": "Parse AI Response", "type": "main", "index": 0}]]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [[{"node": "AI Score", "type": "ai_languageModel", "index": 0}]]
+    },
+    "Parse AI Response": {
+      "main": [[{"node": "If Relevant", "type": "main", "index": 0}]]
+    },
+    "If Relevant": {
+      "main": [
+        [{"node": "Send Telegram", "type": "main", "index": 0}],
+        [{"node": "Mark Rejected as Sent", "type": "main", "index": 0}]
+      ]
+    },
+    "Send Telegram": {
+      "main": [[{"node": "Mark as Sent", "type": "main", "index": 0}]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

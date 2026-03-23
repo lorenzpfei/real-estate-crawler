@@ -116,14 +116,30 @@ async def run_once() -> None:
 
 
 async def main() -> None:
-    """Infinite loop with randomized interval (jitter)."""
+    """Infinite loop with randomized interval (jitter), active only during configured hours."""
+    from zoneinfo import ZoneInfo
+    from src.config import ACTIVE_HOUR_START, ACTIVE_HOUR_END, TIMEZONE
+
+    tz = ZoneInfo(TIMEZONE)
     database.init_db()
-    logger.info("Scraper started")
+    logger.info("Scraper started (active %d:00–%d:00 %s)", ACTIVE_HOUR_START, ACTIVE_HOUR_END, TIMEZONE)
 
     while True:
-        await run_once()
-        sleep_seconds = random.randint(INTERVAL_MIN, INTERVAL_MAX)
-        logger.info("Next run in %d seconds", sleep_seconds)
+        from datetime import datetime
+        hour = datetime.now(tz).hour
+        if ACTIVE_HOUR_START <= hour < ACTIVE_HOUR_END:
+            await run_once()
+            sleep_seconds = random.randint(INTERVAL_MIN, INTERVAL_MAX)
+            logger.info("Next run in %d minutes", sleep_seconds // 60)
+        else:
+            # Sleep until start of active window
+            now = datetime.now(tz)
+            next_start = now.replace(hour=ACTIVE_HOUR_START, minute=0, second=0, microsecond=0)
+            if now >= next_start:
+                from datetime import timedelta
+                next_start += timedelta(days=1)
+            sleep_seconds = int((next_start - now).total_seconds())
+            logger.info("Outside active hours, sleeping until %s", next_start.strftime("%H:%M"))
         await asyncio.sleep(sleep_seconds)
 
 

@@ -5,24 +5,3 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    environment:
-      # Proxy (optional)
-      # PROXY_URL: http://user:pass@proxy:port
-
-      # Kleinanzeigen – Würzburg, Wohnung mieten (203) + Haus mieten (205)
-      KA_LOCATION_ID: "7667"
-      KA_DISTANCE: "10"
-      KA_CATEGORY_IDS: "203,205"
-
-      # ImmoScout24 – Würzburg, Wohnung mieten, 5km
-      IS24_REAL_ESTATE_TYPE: apartmentrent
-      IS24_GEOCOORDINATES: "49.79426;9.92748;5.0"
-
-      # Immowelt – Würzburg, Kauf Haus+Wohnung
-      IW_DISTRIBUTION_TYPES: "Buy,Buy_Auction,Compulsory_Auction"
-      IW_ESTATE_TYPES: "House,Apartment"
-      IW_LOCATIONS: AD08DE7873
-
-      # Scheduling (Sekunden)
-      INTERVAL_MIN: "300"
-      INTERVAL_MAX: "600"
