@@ -27,13 +27,21 @@ class Listing:
     title: str
     url: str
 
-    # Price
-    price: float | None = None
+    # Price – rent fields
     warm_rent: float | None = None
     cold_rent: float | None = None
     extra_costs: float | None = None
-    price_per_sqm: float | None = None
     deposit: float | None = None
+
+    # Price – buy fields
+    buy_price: float | None = None
+    hausgeld: float | None = None
+    commission_percent: float | None = None
+    original_price: float | None = None     # before reduction
+
+    # Price – shared
+    price_per_sqm: float | None = None
+    listing_type: str = ""                  # "rent" or "buy"
 
     # Property details
     rooms: float | None = None
@@ -43,8 +51,7 @@ class Listing:
     total_floors: int | None = None
     bedrooms: float | None = None
     bathrooms: float | None = None
-    property_type: str = ""       # e.g. "Etagenwohnung", "Einfamilienhaus"
-    listing_type: str = ""        # "rent" or "buy"
+    property_type: str = ""
 
     # Location
     city: str = ""
@@ -67,6 +74,18 @@ class Listing:
     energy_class: str = ""
     heating_type: str = ""
 
+    # AI-extracted fields (from description via GPT)
+    has_balcony: bool | None = None
+    has_garden: bool | None = None
+    has_parking: bool | None = None
+    has_elevator: bool | None = None
+    has_cellar: bool | None = None
+    has_fitted_kitchen: bool | None = None
+    num_units_in_building: int | None = None
+    available_from: str = ""
+    pets_allowed: bool | None = None
+    is_temporary: bool | None = None
+
     # Meta
     is_private: bool | None = None
     published_at: datetime | None = None
@@ -81,7 +100,6 @@ def parse_datetime(value: str) -> datetime | None:
     if not value:
         return None
 
-    # Try German relative format first ("vor 9 Monaten", "vor 3 Tagen")
     match = _RELATIVE_DE.search(value)
     if match:
         amount = int(match.group(1))
@@ -95,7 +113,6 @@ def parse_datetime(value: str) -> datetime | None:
                 return now - timedelta(days=amount * 365)
             return now - timedelta(**{eng_unit: amount})
 
-    # Fall back to standard parsing
     try:
         dt = dateparser.parse(value)
         if dt and dt.tzinfo is None:

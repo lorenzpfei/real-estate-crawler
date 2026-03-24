@@ -144,7 +144,7 @@ async def search(
                 portal="kleinanzeigen",
                 title=title,
                 url=url,
-                price=price,
+                buy_price=price if not is_rent else None,
                 cold_rent=price if is_rent else None,
                 rooms=rooms,
                 living_space=living_space,

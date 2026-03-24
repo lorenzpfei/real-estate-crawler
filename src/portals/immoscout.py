@@ -74,6 +74,9 @@ def _parse_expose(data: dict) -> dict:
         "extra_costs": None,
         "price_per_sqm": None,
         "deposit": None,
+        "hausgeld": None,
+        "commission_percent": None,
+        "original_price": None,
         "rooms": None,
         "living_space": None,
         "floor": None,
@@ -113,15 +116,18 @@ def _parse_expose(data: dict) -> dict:
             for attr in section.get("attributes", []):
                 label = attr.get("label", "")
                 text = attr.get("text", "")
-                if "Zimmer" in label and not "Schlaf" in label:
+                atype = attr.get("type", "")
+                if "Zimmer" in label and "Schlaf" not in label:
                     result["rooms"] = _parse_price(text)
                 elif "Wohnfläche" in label:
                     result["living_space"] = _parse_price(text)
                 elif "Warmmiete" in label:
                     result["warm_rent"] = _parse_price(text)
-                elif "Kaltmiete" in label:
+                elif "Kaltmiete" in label or "Kaufpreis" in label:
                     result["cold_rent"] = _parse_price(text)
                     result["price_per_sqm"] = _parse_price(label)
+                if atype == "REDUCED_PRICE":
+                    result["original_price"] = _parse_price(attr.get("originalPrice", ""))
 
         elif stype == "ATTRIBUTE_LIST":
             attrs = section.get("attributes", [])
@@ -155,6 +161,12 @@ def _parse_expose(data: dict) -> dict:
                 ppsqm = _find_attr(attrs, "Preis/m")
                 if ppsqm:
                     result["price_per_sqm"] = _parse_price(ppsqm)
+                hg = _find_attr(attrs, "Hausgeld")
+                if hg:
+                    result["hausgeld"] = _parse_price(hg)
+                prov = _find_attr(attrs, "Provision")
+                if prov:
+                    result["commission_percent"] = _parse_price(prov)
 
             elif "Energieausweis" in title or "Bausubstanz" in title:
                 bj = _find_attr(attrs, "Baujahr")
@@ -280,12 +292,15 @@ async def search(
                 portal="immoscout24",
                 title=title,
                 url=url,
-                price=price,
+                buy_price=price if not is_rent else None,
                 warm_rent=detail.get("warm_rent") if is_rent else None,
-                cold_rent=detail.get("cold_rent") if is_rent else None,
+                cold_rent=detail.get("cold_rent") or (price if is_rent else None),
                 extra_costs=detail.get("extra_costs"),
                 price_per_sqm=detail.get("price_per_sqm"),
                 deposit=detail.get("deposit"),
+                hausgeld=detail.get("hausgeld"),
+                commission_percent=detail.get("commission_percent"),
+                original_price=detail.get("original_price"),
                 rooms=detail.get("rooms"),
                 living_space=detail.get("living_space"),
                 floor=int(detail["floor"]) if detail.get("floor") else None,

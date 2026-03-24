@@ -9,6 +9,7 @@ load_dotenv()
 
 from src import database
 from src.client import build_client
+from src.enrichment import enrich_listing
 from src.models import Listing
 from src.config import (
     INTERVAL_MAX,
@@ -34,9 +35,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def _process_listings(listings: list[Listing]) -> int:
+async def _process_listings(client, listings: list[Listing]) -> int:
     """Store new listings and return the count of newly added entries."""
-    # Filter out unwanted listings
     _SKIP_PREFIXES = ("suche ", "suchen ", "ich suche", "wir suche", "familie sucht", "paar sucht")
     _SKIP_KEYWORDS = ("zwischenmiete",)
     new_count = 0
@@ -47,11 +47,13 @@ async def _process_listings(listings: list[Listing]) -> int:
         if any(kw in title_lower for kw in _SKIP_KEYWORDS):
             continue
         if not database.exists(listing.id):
-            # Calculate price_per_sqm: cold rent for rentals, price for purchases
+            # Calculate price_per_sqm: cold rent for rentals, buy price for purchases
             if listing.price_per_sqm is None and listing.living_space:
-                base = listing.cold_rent if listing.listing_type == "rent" else listing.price
+                base = listing.cold_rent if listing.listing_type == "rent" else listing.buy_price
                 if base:
                     listing.price_per_sqm = round(base / listing.living_space, 2)
+            # AI enrichment
+            listing = await enrich_listing(client, listing)
             database.insert(listing)
             logger.info(
                 "NEW: [%s] %s – %s → %s",
@@ -80,7 +82,7 @@ async def run_once() -> None:
                     distance=KA_DISTANCE,
                     category_id=cat_id,
                 )
-                await _process_listings(ka_listings)
+                await _process_listings(client, ka_listings)
             except Exception:
                 logger.exception("Error fetching Kleinanzeigen (category %s)", cat_id)
 
@@ -93,7 +95,7 @@ async def run_once() -> None:
                 price_min=IS24_PRICE_MIN,
                 price_max=IS24_PRICE_MAX,
             )
-            await _process_listings(is24_listings)
+            await _process_listings(client, is24_listings)
         except Exception:
             logger.exception("Error fetching ImmoScout24")
 
@@ -105,7 +107,7 @@ async def run_once() -> None:
                 estate_types=IW_ESTATE_TYPES,
                 locations=IW_LOCATIONS,
             )
-            await _process_listings(iw_listings)
+            await _process_listings(client, iw_listings)
         except Exception:
             logger.exception("Error fetching Immowelt")
 

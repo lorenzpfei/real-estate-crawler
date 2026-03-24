@@ -177,7 +177,7 @@ async def search(
                 portal="immowelt",
                 title=title,
                 url=url,
-                price=price,
+                buy_price=price if not is_rent else None,
                 cold_rent=price if is_rent else None,
                 price_per_sqm=price_per_sqm,
                 rooms=rooms,
