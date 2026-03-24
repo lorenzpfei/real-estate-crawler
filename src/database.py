@@ -39,6 +39,7 @@ def init_db() -> None:
 
                 price_per_sqm           REAL,
                 listing_type            TEXT DEFAULT '',
+                renovation_surcharge    REAL,
 
                 rooms                   REAL,
                 living_space            REAL,
@@ -87,6 +88,10 @@ def init_db() -> None:
             )
             """
         )
+        # Migrations for existing databases
+        conn.execute("""
+            ALTER TABLE apartments ADD COLUMN IF NOT EXISTS renovation_surcharge REAL
+        """)
 
 
 def exists(listing_id: str) -> bool:
@@ -108,7 +113,7 @@ def insert(listing: Listing) -> None:
                 id, portal, title, url,
                 warm_rent, cold_rent, extra_costs, deposit,
                 buy_price, hausgeld, commission_percent, original_price,
-                price_per_sqm, listing_type,
+                price_per_sqm, listing_type, renovation_surcharge,
                 rooms, living_space, plot_space, floor, total_floors, bedrooms, bathrooms,
                 property_type,
                 city, zip_code, district, street, latitude, longitude,
@@ -122,7 +127,7 @@ def insert(listing: Listing) -> None:
                 %s, %s, %s, %s,
                 %s, %s, %s, %s,
                 %s, %s, %s, %s,
-                %s, %s,
+                %s, %s, %s,
                 %s, %s, %s, %s, %s, %s, %s,
                 %s,
                 %s, %s, %s, %s, %s, %s,
@@ -139,7 +144,7 @@ def insert(listing: Listing) -> None:
                 listing.warm_rent, listing.cold_rent, listing.extra_costs, listing.deposit,
                 listing.buy_price, listing.hausgeld, listing.commission_percent,
                 listing.original_price,
-                listing.price_per_sqm, listing.listing_type,
+                listing.price_per_sqm, listing.listing_type, listing.renovation_surcharge,
                 listing.rooms, listing.living_space, listing.plot_space,
                 listing.floor, listing.total_floors, listing.bedrooms, listing.bathrooms,
                 listing.property_type,

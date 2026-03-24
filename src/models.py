@@ -42,6 +42,7 @@ class Listing:
     # Price – shared
     price_per_sqm: float | None = None
     listing_type: str = ""                  # "rent" or "buy"
+    renovation_surcharge: float | None = None   # estimated renovation cost in €
 
     # Property details
     rooms: float | None = None

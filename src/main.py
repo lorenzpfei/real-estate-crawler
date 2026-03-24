@@ -34,6 +34,37 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _estimate_renovation_surcharge(listing: Listing) -> float:
+    """Estimate renovation cost based on energy class and year built."""
+    sqm = listing.living_space or 0
+    if sqm <= 0:
+        return 0.0
+
+    # Energy class surcharge per m²
+    ec = (listing.energy_class or "").upper().strip()
+    energy_surcharge = {
+        "A+": 0, "A": 0, "B": 0,
+        "C": 200, "D": 200,
+        "E": 500, "F": 500,
+        "G": 800, "H": 800,
+    }.get(ec, 400)  # unknown = 400
+
+    # Year built surcharge per m²
+    yb = listing.year_built
+    if yb is None:
+        year_surcharge = 300
+    elif yb >= 2000:
+        year_surcharge = 0
+    elif yb >= 1980:
+        year_surcharge = 150
+    elif yb >= 1960:
+        year_surcharge = 350
+    else:
+        year_surcharge = 500
+
+    return round((energy_surcharge + year_surcharge) * sqm)
+
+
 async def _process_listings(client, listings: list[Listing]) -> int:
     """Store new listings and return the count of newly added entries."""
     _SKIP_PREFIXES = ("suche ", "suchen ", "ich suche", "wir suche", "familie sucht", "paar sucht")
@@ -51,6 +82,9 @@ async def _process_listings(client, listings: list[Listing]) -> int:
                 base = listing.cold_rent if listing.listing_type == "rent" else listing.buy_price
                 if base:
                     listing.price_per_sqm = round(base / listing.living_space, 2)
+            # Calculate renovation surcharge for buy listings
+            if listing.listing_type == "buy" and listing.buy_price and listing.living_space:
+                listing.renovation_surcharge = _estimate_renovation_surcharge(listing)
             # AI enrichment
             listing = await enrich_listing(client, listing)
             database.insert(listing)
