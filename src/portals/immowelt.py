@@ -138,7 +138,11 @@ async def search(
         district = loc.get("district", "")
 
         # Description
-        description = item.get("mainDescription", "")
+        raw_desc = item.get("mainDescription", "")
+        if isinstance(raw_desc, dict):
+            description = raw_desc.get("description", "")
+        else:
+            description = raw_desc or ""
 
         # Energy class
         energy_class = item.get("energyClass", "")
