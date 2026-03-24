@@ -10,6 +10,7 @@ import re
 
 import httpx
 
+from src import database
 from src.client import fetch, post
 from src.models import Listing, parse_datetime
 
@@ -271,7 +272,11 @@ async def search(
         published_at = parse_datetime(item.get("published", ""))
         url = f"https://www.immobilienscout24.de/expose/{listing_id}"
 
-        # Fetch expose detail
+        # Skip expose detail fetch if already in DB
+        if database.exists(f"is24-{listing_id}"):
+            continue
+
+        # Fetch expose detail (only for new listings)
         expose = await _fetch_expose(client, listing_id)
         detail = _parse_expose(expose) if expose else {}
 

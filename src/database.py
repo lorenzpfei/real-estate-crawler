@@ -92,6 +92,22 @@ def init_db() -> None:
         conn.execute("""
             ALTER TABLE apartments ADD COLUMN IF NOT EXISTS renovation_surcharge REAL
         """)
+        # Runs log table
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS scrape_runs (
+                id              SERIAL PRIMARY KEY,
+                started_at      TIMESTAMPTZ NOT NULL,
+                finished_at     TIMESTAMPTZ,
+                portal          TEXT,
+                search_type     TEXT,
+                listings_found  INTEGER DEFAULT 0,
+                listings_new    INTEGER DEFAULT 0,
+                listings_skipped INTEGER DEFAULT 0,
+                error           TEXT
+            )
+            """
+        )
 
 
 def exists(listing_id: str) -> bool:
@@ -174,3 +190,25 @@ def cleanup_old_entries() -> int:
             (cutoff,),
         )
     return cursor.rowcount
+
+
+def log_run_start(portal: str, search_type: str) -> int:
+    """Log the start of a scrape run. Returns the run ID."""
+    with _get_connection() as conn:
+        row = conn.execute(
+            "INSERT INTO scrape_runs (started_at, portal, search_type) VALUES (%s, %s, %s) RETURNING id",
+            (datetime.now(timezone.utc), portal, search_type),
+        ).fetchone()
+    return row[0]
+
+
+def log_run_end(run_id: int, found: int, new: int, skipped: int, error: str | None = None) -> None:
+    """Log the result of a scrape run."""
+    with _get_connection() as conn:
+        conn.execute(
+            """UPDATE scrape_runs
+               SET finished_at = %s, listings_found = %s, listings_new = %s,
+                   listings_skipped = %s, error = %s
+               WHERE id = %s""",
+            (datetime.now(timezone.utc), found, new, skipped, error, run_id),
+        )
