@@ -50,7 +50,10 @@ async def enrich_listing(client: httpx.AsyncClient, listing: Listing) -> Listing
     if not OPENAI_API_KEY:
         return listing
 
-    # Build a compact text for the AI
+    # Skip listings with no useful text
+    if not listing.description and not listing.equipment and not listing.other_info:
+        return listing
+
     text_parts = [f"Title: {listing.title}"]
     if listing.description:
         text_parts.append(f"Description: {listing.description[:1500]}")
@@ -64,23 +67,23 @@ async def enrich_listing(client: httpx.AsyncClient, listing: Listing) -> Listing
     user_text = "\n".join(text_parts)
 
     try:
-        response = await client.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENAI_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": OPENAI_MODEL,
-                "messages": [
-                    {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": user_text},
-                ],
-                "temperature": 0,
-                "max_completion_tokens": 200,
-            },
-            timeout=15.0,
-        )
+        async with httpx.AsyncClient(timeout=10.0) as ai_client:
+            response = await ai_client.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {OPENAI_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": OPENAI_MODEL,
+                    "messages": [
+                        {"role": "system", "content": _SYSTEM_PROMPT},
+                        {"role": "user", "content": user_text},
+                    ],
+                    "temperature": 0,
+                    "max_completion_tokens": 200,
+                },
+            )
 
         if response.status_code != 200:
             logger.warning("OpenAI API error: %d", response.status_code)

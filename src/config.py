@@ -7,17 +7,17 @@ import os
 KA_QUERY = os.getenv("KA_QUERY", "")
 KA_LOCATION_ID = os.getenv("KA_LOCATION_ID", "")
 KA_DISTANCE = int(os.getenv("KA_DISTANCE", "0"))
-KA_CATEGORY_IDS = os.getenv("KA_CATEGORY_IDS", "")  # comma-separated
+KA_CATEGORY_IDS = os.getenv("KA_CATEGORY_IDS", "")  # comma-separated, e.g. "203,205,196,208"
 
 # ImmoScout24
-IS24_REAL_ESTATE_TYPE = os.getenv("IS24_REAL_ESTATE_TYPE", "apartmentrent")
+IS24_REAL_ESTATE_TYPES = os.getenv("IS24_REAL_ESTATE_TYPES", "")  # comma-separated, e.g. "apartmentrent,apartmentbuy"
 IS24_GEOCOORDINATES = os.getenv("IS24_GEOCOORDINATES", "")
 IS24_PRICE_MIN = int(os.getenv("IS24_PRICE_MIN", "0"))
 IS24_PRICE_MAX = int(os.getenv("IS24_PRICE_MAX", "0"))
 
-# Immowelt (incl. Immonet)
-IW_DISTRIBUTION_TYPES = os.getenv("IW_DISTRIBUTION_TYPES", "")
-IW_ESTATE_TYPES = os.getenv("IW_ESTATE_TYPES", "")
+# Immowelt (incl. Immonet) – supports multiple searches via semicolon
+# Each search is "distributionTypes|estateTypes", e.g. "Rent|Apartment,House;Buy,Buy_Auction|House,Apartment"
+IW_SEARCHES = os.getenv("IW_SEARCHES", "")
 IW_LOCATIONS = os.getenv("IW_LOCATIONS", "")
 
 # Scheduling

@@ -17,9 +17,8 @@ from src.config import (
     IS24_GEOCOORDINATES,
     IS24_PRICE_MAX,
     IS24_PRICE_MIN,
-    IS24_REAL_ESTATE_TYPE,
-    IW_DISTRIBUTION_TYPES,
-    IW_ESTATE_TYPES,
+    IS24_REAL_ESTATE_TYPES,
+    IW_SEARCHES,
     IW_LOCATIONS,
     KA_CATEGORY_IDS,
     KA_DISTANCE,
@@ -56,10 +55,10 @@ async def _process_listings(client, listings: list[Listing]) -> int:
             listing = await enrich_listing(client, listing)
             database.insert(listing)
             logger.info(
-                "NEW: [%s] %s – %s → %s",
+                "NEW: [%s] [%s] %s → %s",
                 listing.portal,
+                listing.listing_type,
                 listing.title,
-                listing.price,
                 listing.url,
             )
             new_count += 1
@@ -86,30 +85,39 @@ async def run_once() -> None:
             except Exception:
                 logger.exception("Error fetching Kleinanzeigen (category %s)", cat_id)
 
-        # ImmoScout24
-        try:
-            is24_listings = await immoscout.search(
-                client,
-                real_estate_type=IS24_REAL_ESTATE_TYPE,
-                geocoordinates=IS24_GEOCOORDINATES,
-                price_min=IS24_PRICE_MIN,
-                price_max=IS24_PRICE_MAX,
-            )
-            await _process_listings(client, is24_listings)
-        except Exception:
-            logger.exception("Error fetching ImmoScout24")
+        # ImmoScout24 (one search per real estate type)
+        for re_type in IS24_REAL_ESTATE_TYPES.split(","):
+            re_type = re_type.strip()
+            if not re_type:
+                continue
+            try:
+                is24_listings = await immoscout.search(
+                    client,
+                    real_estate_type=re_type,
+                    geocoordinates=IS24_GEOCOORDINATES,
+                    price_min=IS24_PRICE_MIN,
+                    price_max=IS24_PRICE_MAX,
+                )
+                await _process_listings(client, is24_listings)
+            except Exception:
+                logger.exception("Error fetching ImmoScout24 (%s)", re_type)
 
-        # Immowelt (incl. Immonet)
-        try:
-            iw_listings = await immowelt.search(
-                client,
-                distribution_types=IW_DISTRIBUTION_TYPES,
-                estate_types=IW_ESTATE_TYPES,
-                locations=IW_LOCATIONS,
-            )
-            await _process_listings(client, iw_listings)
-        except Exception:
-            logger.exception("Error fetching Immowelt")
+        # Immowelt (one search per distribution+estate combo)
+        for search_def in IW_SEARCHES.split(";"):
+            search_def = search_def.strip()
+            if not search_def or "|" not in search_def:
+                continue
+            dist_types, estate_types = search_def.split("|", 1)
+            try:
+                iw_listings = await immowelt.search(
+                    client,
+                    distribution_types=dist_types.strip(),
+                    estate_types=estate_types.strip(),
+                    locations=IW_LOCATIONS,
+                )
+                await _process_listings(client, iw_listings)
+            except Exception:
+                logger.exception("Error fetching Immowelt (%s)", search_def)
 
     # Clean up old entries
     deleted = database.cleanup_old_entries()
@@ -134,7 +142,6 @@ async def main() -> None:
             sleep_seconds = random.randint(INTERVAL_MIN, INTERVAL_MAX)
             logger.info("Next run in %d minutes", sleep_seconds // 60)
         else:
-            # Sleep until start of active window
             now = datetime.now(tz)
             next_start = now.replace(hour=ACTIVE_HOUR_START, minute=0, second=0, microsecond=0)
             if now >= next_start:
