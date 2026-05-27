@@ -15,7 +15,7 @@ Async Python scraper that monitors German real estate portals for new listings. 
 3. GPT extracts structured data from descriptions (balcony, parking, etc.)
 4. Random pause (37-77 min jitter), then repeat
 5. Only active during configured hours (default 8:00-22:00)
-6. Entries older than 30 days are automatically cleaned up
+6. Optionally cleans up entries older than `RETENTION_DAYS` (default: 0 = keep forever)
 
 ## Quickstart
 
@@ -107,6 +107,7 @@ Each search is formatted as `distributionTypes|estateTypes`. Use `;` to define m
 | `ACTIVE_HOUR_START` | Start of active window (hour) | `8` |
 | `ACTIVE_HOUR_END` | End of active window (hour) | `22` |
 | `TIMEZONE` | Timezone for active hours | `Europe/Berlin` |
+| `RETENTION_DAYS` | Delete listings older than N days (0 = keep forever) | `0` |
 
 ### Proxy (optional)
 

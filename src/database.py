@@ -9,7 +9,7 @@ from psycopg.rows import tuple_row
 from src.models import Listing
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
-RETENTION_DAYS = 30
+RETENTION_DAYS = int(os.getenv("RETENTION_DAYS", "0"))
 
 
 def _get_connection() -> psycopg.Connection:
@@ -241,6 +241,8 @@ def insert(listing: Listing) -> None:
 
 def cleanup_old_entries() -> int:
     """Delete entries older than RETENTION_DAYS. Returns the number of deleted rows."""
+    if RETENTION_DAYS == 0:
+        return 0
     cutoff = datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)
     with _get_connection() as conn:
         cursor = conn.execute(
