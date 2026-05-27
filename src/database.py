@@ -83,7 +83,6 @@ def init_db() -> None:
                 published_at            TIMESTAMPTZ,
                 images                  TEXT[] DEFAULT '{}',
 
-                sent_at                 TIMESTAMPTZ,
                 timestamp               TIMESTAMPTZ NOT NULL
             )
             """
@@ -108,6 +107,65 @@ def init_db() -> None:
             )
             """
         )
+        # Users
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id       SERIAL PRIMARY KEY,
+                name     TEXT NOT NULL UNIQUE,
+                api_key  TEXT NOT NULL UNIQUE
+            )
+            """
+        )
+        # Per-user listing status (n:m)
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS listing_user_status (
+                listing_id  TEXT REFERENCES apartments(id) ON DELETE CASCADE,
+                user_id     INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                sent_at     TIMESTAMPTZ,
+                seen_at     TIMESTAMPTZ,
+                PRIMARY KEY (listing_id, user_id)
+            )
+            """
+        )
+        # Indices
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_apartments_timestamp ON apartments(timestamp)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_lus_user_id ON listing_user_status(user_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_lus_sent_at ON listing_user_status(sent_at) WHERE sent_at IS NULL"
+        )
+        # One-time migration: seed Lorenz and carry over legacy sent_at → seen_at
+        conn.execute(
+            """
+            INSERT INTO users (name, api_key)
+            VALUES ('Lorenz', 'replace-me')
+            ON CONFLICT DO NOTHING
+            """
+        )
+        conn.execute(
+            """
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'apartments' AND column_name = 'sent_at'
+                ) THEN
+                    INSERT INTO listing_user_status (listing_id, user_id, sent_at, seen_at)
+                    SELECT a.id, u.id, a.sent_at, a.sent_at
+                    FROM apartments a
+                    JOIN users u ON u.name = 'Lorenz'
+                    WHERE a.sent_at IS NOT NULL
+                    ON CONFLICT DO NOTHING;
+                END IF;
+            END $$
+            """
+        )
+        conn.execute("ALTER TABLE apartments DROP COLUMN IF EXISTS sent_at")
 
 
 def exists(listing_id: str) -> bool:
