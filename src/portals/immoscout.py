@@ -6,6 +6,7 @@ expose details for description, attributes, and full image set.
 """
 
 import logging
+import os
 import re
 
 import httpx
@@ -20,7 +21,7 @@ SEARCH_URL = "https://api.mobile.immobilienscout24.de/search/list"
 EXPOSE_URL = "https://api.mobile.immobilienscout24.de/expose"
 
 HEADERS = {
-    "User-Agent": "IS24_USER_AGENT_PLACEHOLDER",
+    "User-Agent": os.getenv("IS24_USER_AGENT", "IS24_USER_AGENT_PLACEHOLDER"),
     "Content-Type": "application/json",
 }
 

@@ -1,6 +1,7 @@
 """Kleinanzeigen Mobile API – fetch listings."""
 
 import logging
+import os
 
 import httpx
 
@@ -12,8 +13,8 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://api.kleinanzeigen.de/api/ads.json"
 
 HEADERS = {
-    "Authorization": "Basic KA_AUTH_PLACEHOLDER",
-    "User-Agent": "okhttp/4.10.0",
+    "Authorization": f"Basic {os.getenv('KA_AUTH', '')}",
+    "User-Agent": os.getenv("KA_USER_AGENT", "okhttp/4.10.0"),
     "Accept": "application/json",
 }
 
