@@ -6,7 +6,7 @@ export interface Env {
 
 const KEY_CACHE_TTL_SECONDS = 60;
 const DATA_CACHE_TTL_SECONDS = 300;
-const MAX_LIMIT = 1000;
+const SUPABASE_PAGE_SIZE = 1000;
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -28,35 +28,55 @@ export default {
     const userId = await validateApiKey(apiKey, env);
     if (!userId) return json({ error: "Invalid API key" }, 403);
 
-    // Data cache keyed by URL params only (same data for all authenticated users)
     const cacheKey = new Request(`https://cache${url.pathname}?${url.searchParams}`);
     const cache = caches.default;
     const cached = await cache.match(cacheKey);
     if (cached) return cached;
 
     const format = url.searchParams.get("format") === "csv" ? "csv" : "json";
-    const supabaseParams = buildSupabaseParams(url.searchParams);
 
-    const supabaseRes = await fetch(
-      `${env.SUPABASE_URL}/rest/v1/apartments?${supabaseParams}`,
-      {
-        headers: {
-          apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-          Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-          Accept: format === "csv" ? "text/csv" : "application/json",
-          "Accept-Profile": "public",
-        },
-      }
-    );
+    // For CSV without explicit limit: fetch everything. For JSON: default 500.
+    const requestedLimit = url.searchParams.has("limit")
+      ? parseInt(url.searchParams.get("limit")!)
+      : format === "csv" ? Infinity : 500;
 
-    if (!supabaseRes.ok) {
-      const err = await supabaseRes.text();
+    // Fetch first page
+    const firstParams = buildSupabaseParams(url.searchParams, 0, Math.min(requestedLimit, SUPABASE_PAGE_SIZE));
+    const firstRes = await fetch(`${env.SUPABASE_URL}/rest/v1/apartments?${firstParams}`, supabaseHeaders(env));
+    if (!firstRes.ok) {
+      const err = await firstRes.text();
       return json({ error: "Database error", detail: err }, 502);
     }
 
+    let allRows = (await firstRes.json()) as Record<string, unknown>[];
+
+    // Paginate if needed
+    let offset = SUPABASE_PAGE_SIZE;
+    while (allRows.length === offset && allRows.length < requestedLimit) {
+      const remaining = requestedLimit === Infinity ? SUPABASE_PAGE_SIZE : Math.min(requestedLimit - allRows.length, SUPABASE_PAGE_SIZE);
+      const nextParams = buildSupabaseParams(url.searchParams, offset, remaining);
+      const nextRes = await fetch(`${env.SUPABASE_URL}/rest/v1/apartments?${nextParams}`, supabaseHeaders(env));
+      if (!nextRes.ok) break;
+      const nextRows = (await nextRes.json()) as Record<string, unknown>[];
+      allRows = allRows.concat(nextRows);
+      if (nextRows.length < SUPABASE_PAGE_SIZE) break;
+      offset += SUPABASE_PAGE_SIZE;
+    }
+
+    const transformed = allRows.map(transformRow);
+
+    let body: string;
+    let contentType: string;
+    if (format === "csv") {
+      body = toCSV(transformed);
+      contentType = "text/csv; charset=utf-8";
+    } else {
+      body = JSON.stringify(transformed);
+      contentType = "application/json";
+    }
+
     const headers = new Headers({
-      "Content-Type":
-        format === "csv" ? "text/csv; charset=utf-8" : "application/json",
+      "Content-Type": contentType,
       "Cache-Control": `public, max-age=${DATA_CACHE_TTL_SECONDS}`,
       "Access-Control-Allow-Origin": "*",
     });
@@ -64,11 +84,22 @@ export default {
       headers.set("Content-Disposition", 'attachment; filename="listings.csv"');
     }
 
-    const response = new Response(supabaseRes.body, { status: 200, headers });
+    const response = new Response(body, { status: 200, headers });
     ctx.waitUntil(cache.put(cacheKey, response.clone()));
     return response;
   },
 };
+
+function supabaseHeaders(env: Env): RequestInit {
+  return {
+    headers: {
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      Accept: "application/json",
+      "Accept-Profile": "public",
+    },
+  };
+}
 
 async function validateApiKey(apiKey: string, env: Env): Promise<string | null> {
   const cached = await env.API_KEY_CACHE.get(`key:${apiKey}`);
@@ -76,12 +107,7 @@ async function validateApiKey(apiKey: string, env: Env): Promise<string | null> 
 
   const res = await fetch(
     `${env.SUPABASE_URL}/rest/v1/users?api_key=eq.${encodeURIComponent(apiKey)}&select=id&limit=1`,
-    {
-      headers: {
-        apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-        Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-      },
-    }
+    supabaseHeaders(env)
   );
 
   if (!res.ok) return null;
@@ -89,15 +115,11 @@ async function validateApiKey(apiKey: string, env: Env): Promise<string | null> 
   const data = (await res.json()) as { id: number }[];
   const userId = data[0]?.id?.toString() ?? "";
 
-  // Cache empty string for invalid keys so we don't hammer the DB
-  await env.API_KEY_CACHE.put(`key:${apiKey}`, userId, {
-    expirationTtl: KEY_CACHE_TTL_SECONDS,
-  });
-
+  await env.API_KEY_CACHE.put(`key:${apiKey}`, userId, { expirationTtl: KEY_CACHE_TTL_SECONDS });
   return userId || null;
 }
 
-function buildSupabaseParams(searchParams: URLSearchParams): string {
+function buildSupabaseParams(searchParams: URLSearchParams, offset: number, limit: number): string {
   const p = new URLSearchParams();
   p.set("select", "*");
   p.set("order", "timestamp.desc");
@@ -120,30 +142,61 @@ function buildSupabaseParams(searchParams: URLSearchParams): string {
   const min_space = searchParams.get("min_space");
   if (min_space) p.set("living_space", `gte.${min_space}`);
 
-  // max_price applies to cold_rent for rent listings, buy_price for buy
   const max_price = searchParams.get("max_price");
   if (max_price) {
-    if (listing_type === "rent") {
-      p.set("cold_rent", `lte.${max_price}`);
-    } else if (listing_type === "buy") {
-      p.set("buy_price", `lte.${max_price}`);
-    }
-    // without listing_type we skip max_price — ambiguous
+    if (listing_type === "rent") p.set("cold_rent", `lte.${max_price}`);
+    else if (listing_type === "buy") p.set("buy_price", `lte.${max_price}`);
   }
 
   const since = searchParams.get("since");
   if (since) p.set("timestamp", `gte.${since}`);
 
-  const limit = Math.min(
-    parseInt(searchParams.get("limit") ?? "500"),
-    MAX_LIMIT
-  );
   p.set("limit", String(limit));
-
-  const offset = searchParams.get("offset") ?? "0";
-  p.set("offset", offset);
+  p.set("offset", String(offset));
 
   return p.toString();
+}
+
+function stripHtml(s: unknown): string {
+  if (typeof s !== "string") return "";
+  return s.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function parseImages(val: unknown): string {
+  if (!val) return "";
+  const s = String(val);
+  if (s.startsWith("{") && s.endsWith("}")) {
+    return s.slice(1, -1).split(",").filter(Boolean).join(",");
+  }
+  return s;
+}
+
+function transformRow(row: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...row,
+    description: stripHtml(row.description),
+    equipment: stripHtml(row.equipment),
+    location_description: stripHtml(row.location_description),
+    other_info: stripHtml(row.other_info),
+    images: parseImages(row.images),
+  };
+}
+
+function csvCell(val: unknown): string {
+  if (val === null || val === undefined) return "";
+  const s = String(val);
+  if (s.includes('"') || s.includes(",") || s.includes("\n") || s.includes("\r")) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+function toCSV(rows: Record<string, unknown>[]): string {
+  if (rows.length === 0) return "";
+  const cols = Object.keys(rows[0]);
+  const header = cols.join(",");
+  const lines = rows.map((row) => cols.map((c) => csvCell(row[c])).join(","));
+  return [header, ...lines].join("\r\n");
 }
 
 function json(body: unknown, status = 200): Response {
