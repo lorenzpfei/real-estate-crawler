@@ -1,0 +1,20 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "immo-crawler-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-05-27",
+
+  "kv_namespaces": [
+    { "binding": "API_KEY_CACHE", "id": "4b5e36194aa148c282bb611bbd4e4e88" }
+  ],
+
+  "vars": {
+    "SUPABASE_URL": "https://your-project.supabase.co"
+  },
+
+  "routes": [
+    { "pattern": "immo.example.com/*", "zone_name": "example.com" }
+  ]
+
+  // Secrets (set via: pnpm wrangler secret put SUPABASE_SERVICE_ROLE_KEY)
+}

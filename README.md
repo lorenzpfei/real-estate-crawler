@@ -125,4 +125,71 @@ Listings are stored in a PostgreSQL `apartments` table with 52 columns including
 - **Texts:** `description`, `equipment`, `location_description`
 - **Building:** `year_built`, `year_renovated`, `condition`, `energy_class`, `heating_type`
 - **AI-extracted:** `has_balcony`, `has_garden`, `has_parking`, `has_elevator`, `has_cellar`, `has_fitted_kitchen`, `num_units_in_building`, `pets_allowed`, `is_temporary`
-- **Meta:** `listing_type` (rent/buy), `portal`, `is_private`, `published_at`, `images`, `sent_at`
+- **Meta:** `listing_type` (rent/buy), `portal`, `is_private`, `published_at`, `images`, `timestamp`
+
+Per-user send/seen tracking is stored separately in `listing_user_status` (n:m between `apartments` and `users`).
+
+---
+
+## API
+
+Base URL: `https://immo.example.com`
+
+All endpoints require authentication via the `X-API-Key` header.
+
+### Authentication
+
+```
+X-API-Key: <your-api-key>
+```
+
+Keys are managed in the `users` table. Contact the admin to get a key.
+
+---
+
+### `GET /listings`
+
+Returns real estate listings.
+
+**Query Parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `listing_type` | `rent` \| `buy` | Filter by listing type |
+| `portal` | `kleinanzeigen` \| `immoscout24` \| `immowelt` | Filter by source portal |
+| `city` | string | Case-insensitive partial match on city name |
+| `zip_code` | string | Exact match on zip code |
+| `min_rooms` | number | Minimum number of rooms |
+| `min_space` | number | Minimum living space in m² |
+| `max_price` | number | Max cold rent (if `listing_type=rent`) or max buy price (if `listing_type=buy`) |
+| `since` | date (`YYYY-MM-DD`) | Only listings crawled on or after this date |
+| `limit` | number | Number of results (default: 500, max: 1000) |
+| `offset` | number | Pagination offset (default: 0) |
+| `format` | `json` \| `csv` | Response format (default: `json`) |
+
+Results are ordered by `timestamp` descending. Responses are cached for 5 minutes at the edge.
+
+**Examples**
+
+```bash
+# All rent listings with ≥3 rooms
+curl -H "X-API-Key: <key>" "https://immo.example.com/listings?listing_type=rent&min_rooms=3"
+
+# Buy listings under 400k as CSV
+curl -H "X-API-Key: <key>" "https://immo.example.com/listings?listing_type=buy&max_price=400000&format=csv" -o listings.csv
+
+# Listings crawled today
+curl -H "X-API-Key: <key>" "https://immo.example.com/listings?since=2026-05-27"
+
+# Paginate through all results
+curl -H "X-API-Key: <key>" "https://immo.example.com/listings?limit=1000&offset=1000"
+```
+
+**Error Responses**
+
+| Status | Meaning |
+|---|---|
+| 401 | Missing `X-API-Key` header |
+| 403 | Invalid API key |
+| 404 | Unknown endpoint |
+| 502 | Database error |
