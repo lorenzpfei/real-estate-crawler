@@ -131,6 +131,69 @@ Per-user send/seen tracking is stored separately in `listing_user_status` (n:m b
 
 ---
 
+## Deploying the API (Cloudflare Worker)
+
+The `worker/` directory contains a Cloudflare Worker that serves the listings API.
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org) + [pnpm](https://pnpm.io)
+- A [Cloudflare account](https://cloudflare.com) with a domain
+
+### Setup
+
+```bash
+cd worker
+pnpm install
+pnpm wrangler login
+```
+
+Create the KV namespace for API key caching:
+
+```bash
+pnpm wrangler kv namespace create API_KEY_CACHE
+# Copy the returned ID into worker/wrangler.jsonc
+```
+
+Set your Supabase URL in `worker/wrangler.jsonc`:
+
+```jsonc
+"vars": {
+  "SUPABASE_URL": "https://your-project.supabase.co"
+}
+```
+
+Set your Supabase service role key as a secret:
+
+```bash
+pnpm wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+```
+
+Update the route in `worker/wrangler.jsonc` to your domain:
+
+```jsonc
+"routes": [
+  { "pattern": "immo.yourdomain.com/*", "zone_name": "yourdomain.com" }
+]
+```
+
+Deploy:
+
+```bash
+pnpm wrangler deploy
+```
+
+### Adding users
+
+Insert users directly into the `users` table in your database:
+
+```sql
+INSERT INTO users (name, api_key) VALUES ('Alice', gen_random_uuid());
+SELECT name, api_key FROM users;
+```
+
+---
+
 ## API
 
 Base URL: `https://immo.example.com`
