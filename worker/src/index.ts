@@ -13,40 +13,53 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/") {
-      return new Response(JSON.stringify({ status: "ok" }), {
-        headers: { "Content-Type": "application/json" },
-      });
+      return json({ status: "ok" });
     }
 
-    if (url.pathname !== "/listings") {
-      return json({ error: "Not found" }, 404);
-    }
-
+    // Auth required for all other routes
     const apiKey = request.headers.get("X-API-Key");
     if (!apiKey) return json({ error: "Missing X-API-Key header" }, 401);
 
     const userId = await validateApiKey(apiKey, env);
     if (!userId) return json({ error: "Invalid API key" }, 403);
 
-    const cacheKey = new Request(`https://cache${url.pathname}?${url.searchParams}`);
+    // PATCH /listings/:id/sent  or  /listings/:id/seen
+    const patchMatch = url.pathname.match(/^\/listings\/(.+)\/(sent|seen)$/);
+    if (request.method === "PATCH" && patchMatch) {
+      return handleStatusUpdate(patchMatch[1], patchMatch[2] as "sent" | "seen", userId, env);
+    }
+
+    if (url.pathname !== "/listings") {
+      return json({ error: "Not found" }, 404);
+    }
+
+    if (request.method !== "GET") {
+      return json({ error: "Method not allowed" }, 405);
+    }
+
+    // GET /listings
+    const cacheKey = new Request(`https://cache${url.pathname}?${url.searchParams}&_u=${userId}`);
     const cache = caches.default;
     const cached = await cache.match(cacheKey);
     if (cached) return cached;
 
     const format = url.searchParams.get("format") === "csv" ? "csv" : "json";
-
     const rawLimit = url.searchParams.has("limit") ? parseInt(url.searchParams.get("limit")!) : null;
-    // limit=0 or CSV without limit → fetch everything; JSON default → 500
     const fetchAll = rawLimit === 0 || (rawLimit === null && format === "csv");
     const requestedLimit = fetchAll ? Infinity : (rawLimit ?? 500);
     const startOffset = parseInt(url.searchParams.get("offset") ?? "0");
 
+    // Resolve unsent filter: fetch sent listing IDs for this user
+    let excludeIds: string[] = [];
+    if (url.searchParams.get("unsent") === "true") {
+      excludeIds = await getSentIds(userId, env);
+    }
+
     // Fetch first page
-    const firstParams = buildSupabaseParams(url.searchParams, startOffset, Math.min(requestedLimit, SUPABASE_PAGE_SIZE));
-    const firstRes = await fetch(`${env.SUPABASE_URL}/rest/v1/apartments?${firstParams}`, supabaseHeaders(env));
+    const firstParams = buildSupabaseParams(url.searchParams, startOffset, Math.min(requestedLimit, SUPABASE_PAGE_SIZE), excludeIds);
+    const firstRes = await fetch(`${env.SUPABASE_URL}/rest/v1/apartments?${firstParams}`, sbInit(env));
     if (!firstRes.ok) {
-      const err = await firstRes.text();
-      return json({ error: "Database error", detail: err }, 502);
+      return json({ error: "Database error", detail: await firstRes.text() }, 502);
     }
 
     let allRows = (await firstRes.json()) as Record<string, unknown>[];
@@ -55,8 +68,8 @@ export default {
     let offset = startOffset + SUPABASE_PAGE_SIZE;
     while (allRows.length === offset - startOffset && allRows.length < requestedLimit) {
       const remaining = fetchAll ? SUPABASE_PAGE_SIZE : Math.min(requestedLimit - allRows.length, SUPABASE_PAGE_SIZE);
-      const nextParams = buildSupabaseParams(url.searchParams, offset, remaining);
-      const nextRes = await fetch(`${env.SUPABASE_URL}/rest/v1/apartments?${nextParams}`, supabaseHeaders(env));
+      const nextParams = buildSupabaseParams(url.searchParams, offset, remaining, excludeIds);
+      const nextRes = await fetch(`${env.SUPABASE_URL}/rest/v1/apartments?${nextParams}`, sbInit(env));
       if (!nextRes.ok) break;
       const nextRows = (await nextRes.json()) as Record<string, unknown>[];
       allRows = allRows.concat(nextRows);
@@ -91,15 +104,72 @@ export default {
   },
 };
 
-function supabaseHeaders(env: Env): RequestInit {
+async function handleStatusUpdate(
+  listingId: string,
+  action: "sent" | "seen",
+  userId: string,
+  env: Env
+): Promise<Response> {
+  const now = new Date().toISOString();
+
+  if (action === "sent") {
+    // Upsert: create row with sent_at (and seen_at) set
+    const res = await fetch(`${env.SUPABASE_URL}/rest/v1/listing_user_status`, {
+      method: "POST",
+      headers: {
+        ...sbHeaders(env),
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates",
+      },
+      body: JSON.stringify({
+        listing_id: listingId,
+        user_id: parseInt(userId),
+        sent_at: now,
+        seen_at: now,
+      }),
+    });
+    if (!res.ok) return json({ error: "Database error", detail: await res.text() }, 502);
+    return json({ ok: true });
+  }
+
+  // seen: update existing row
+  const res = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/listing_user_status?listing_id=eq.${encodeURIComponent(listingId)}&user_id=eq.${userId}`,
+    {
+      method: "PATCH",
+      headers: {
+        ...sbHeaders(env),
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({ seen_at: now }),
+    }
+  );
+  if (!res.ok) return json({ error: "Database error", detail: await res.text() }, 502);
+  return json({ ok: true });
+}
+
+async function getSentIds(userId: string, env: Env): Promise<string[]> {
+  const res = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/listing_user_status?user_id=eq.${userId}&sent_at=not.is.null&select=listing_id&limit=5000`,
+    sbInit(env)
+  );
+  if (!res.ok) return [];
+  const rows = (await res.json()) as { listing_id: string }[];
+  return rows.map((r) => r.listing_id);
+}
+
+function sbHeaders(env: Env): Record<string, string> {
   return {
-    headers: {
-      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-      Accept: "application/json",
-      "Accept-Profile": "public",
-    },
+    apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+    Accept: "application/json",
+    "Accept-Profile": "public",
   };
+}
+
+function sbInit(env: Env): RequestInit {
+  return { headers: sbHeaders(env) };
 }
 
 async function validateApiKey(apiKey: string, env: Env): Promise<string | null> {
@@ -108,9 +178,8 @@ async function validateApiKey(apiKey: string, env: Env): Promise<string | null> 
 
   const res = await fetch(
     `${env.SUPABASE_URL}/rest/v1/users?api_key=eq.${encodeURIComponent(apiKey)}&select=id&limit=1`,
-    supabaseHeaders(env)
+    sbInit(env)
   );
-
   if (!res.ok) return null;
 
   const data = (await res.json()) as { id: number }[];
@@ -120,7 +189,12 @@ async function validateApiKey(apiKey: string, env: Env): Promise<string | null> 
   return userId || null;
 }
 
-function buildSupabaseParams(searchParams: URLSearchParams, offset: number, limit: number): string {
+function buildSupabaseParams(
+  searchParams: URLSearchParams,
+  offset: number,
+  limit: number,
+  excludeIds: string[] = []
+): string {
   const p = new URLSearchParams();
   p.set("select", "*");
   const sortDir = searchParams.get("sort") === "asc" ? "asc" : "desc";
@@ -152,6 +226,10 @@ function buildSupabaseParams(searchParams: URLSearchParams, offset: number, limi
 
   const since = searchParams.get("since");
   if (since) p.set("timestamp", `gte.${since}`);
+
+  if (excludeIds.length > 0) {
+    p.set("id", `not.in.(${excludeIds.join(",")})`);
+  }
 
   p.set("limit", String(limit));
   p.set("offset", String(offset));

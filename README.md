@@ -258,3 +258,35 @@ curl -H "X-API-Key: <key>" "https://immo.example.com/listings?limit=1000&offset=
 | 403 | Invalid API key |
 | 404 | Unknown endpoint |
 | 502 | Database error |
+
+---
+
+### `PATCH /listings/:id/sent`
+
+Marks a listing as sent (and seen) for the authenticated user. Creates the record if it doesn't exist yet.
+
+```bash
+curl -X PATCH -H "X-API-Key: <key>" "https://immo.example.com/listings/ka-12345/sent"
+# → {"ok":true}
+```
+
+---
+
+### `PATCH /listings/:id/seen`
+
+Marks a listing as seen for the authenticated user. Updates the `seen_at` timestamp on an existing record.
+
+```bash
+curl -X PATCH -H "X-API-Key: <key>" "https://immo.example.com/listings/ka-12345/seen"
+# → {"ok":true}
+```
+
+---
+
+### `GET /listings?unsent=true`
+
+Returns only listings that have not yet been sent to the authenticated user. Supports all the same filters as `GET /listings`.
+
+```bash
+curl -H "X-API-Key: <key>" "https://immo.example.com/listings?unsent=true&listing_type=rent"
+```
