@@ -227,9 +227,10 @@ Returns real estate listings.
 | `min_space` | number | Minimum living space in m² |
 | `max_price` | number | Max cold rent (if `listing_type=rent`) or max buy price (if `listing_type=buy`) |
 | `since` | date (`YYYY-MM-DD`) | Only listings crawled on or after this date |
-| `limit` | number | Number of results (default: 500, max: 1000) |
+| `limit` | number | Number of results (default: 500, `0` = all) |
 | `offset` | number | Pagination offset (default: 0) |
-| `format` | `json` \| `csv` | Response format (default: `json`) |
+| `sort` | `desc` \| `asc` | Sort by timestamp (default: `desc`) |
+| `format` | `json` \| `csv` | Response format (default: `json`, CSV defaults to all rows) |
 
 Results are ordered by `timestamp` descending. Responses are cached for 5 minutes at the edge.
 

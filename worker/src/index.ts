@@ -35,13 +35,14 @@ export default {
 
     const format = url.searchParams.get("format") === "csv" ? "csv" : "json";
 
-    // For CSV without explicit limit: fetch everything. For JSON: default 500.
-    const requestedLimit = url.searchParams.has("limit")
-      ? parseInt(url.searchParams.get("limit")!)
-      : format === "csv" ? Infinity : 500;
+    const rawLimit = url.searchParams.has("limit") ? parseInt(url.searchParams.get("limit")!) : null;
+    // limit=0 or CSV without limit → fetch everything; JSON default → 500
+    const fetchAll = rawLimit === 0 || (rawLimit === null && format === "csv");
+    const requestedLimit = fetchAll ? Infinity : (rawLimit ?? 500);
+    const startOffset = parseInt(url.searchParams.get("offset") ?? "0");
 
     // Fetch first page
-    const firstParams = buildSupabaseParams(url.searchParams, 0, Math.min(requestedLimit, SUPABASE_PAGE_SIZE));
+    const firstParams = buildSupabaseParams(url.searchParams, startOffset, Math.min(requestedLimit, SUPABASE_PAGE_SIZE));
     const firstRes = await fetch(`${env.SUPABASE_URL}/rest/v1/apartments?${firstParams}`, supabaseHeaders(env));
     if (!firstRes.ok) {
       const err = await firstRes.text();
@@ -51,9 +52,9 @@ export default {
     let allRows = (await firstRes.json()) as Record<string, unknown>[];
 
     // Paginate if needed
-    let offset = SUPABASE_PAGE_SIZE;
-    while (allRows.length === offset && allRows.length < requestedLimit) {
-      const remaining = requestedLimit === Infinity ? SUPABASE_PAGE_SIZE : Math.min(requestedLimit - allRows.length, SUPABASE_PAGE_SIZE);
+    let offset = startOffset + SUPABASE_PAGE_SIZE;
+    while (allRows.length === offset - startOffset && allRows.length < requestedLimit) {
+      const remaining = fetchAll ? SUPABASE_PAGE_SIZE : Math.min(requestedLimit - allRows.length, SUPABASE_PAGE_SIZE);
       const nextParams = buildSupabaseParams(url.searchParams, offset, remaining);
       const nextRes = await fetch(`${env.SUPABASE_URL}/rest/v1/apartments?${nextParams}`, supabaseHeaders(env));
       if (!nextRes.ok) break;
@@ -122,7 +123,8 @@ async function validateApiKey(apiKey: string, env: Env): Promise<string | null> 
 function buildSupabaseParams(searchParams: URLSearchParams, offset: number, limit: number): string {
   const p = new URLSearchParams();
   p.set("select", "*");
-  p.set("order", "timestamp.desc");
+  const sortDir = searchParams.get("sort") === "asc" ? "asc" : "desc";
+  p.set("order", `timestamp.${sortDir}`);
 
   const listing_type = searchParams.get("listing_type");
   if (listing_type) p.set("listing_type", `eq.${listing_type}`);
