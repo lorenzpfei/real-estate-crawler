@@ -1,0 +1,325 @@
+{
+  "name": "Immo Crawler – Rent Notifications",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes"
+            }
+          ]
+        }
+      },
+      "id": "c89880dd-f533-489e-9eb3-b371d6c4cfc7",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -2336,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://immo.example.com/listings",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "unsent", "value": "true" },
+            { "name": "listing_type", "value": "rent" },
+            { "name": "min_rooms", "value": "2" },
+            { "name": "min_space", "value": "60" },
+            { "name": "since", "value": "={{ DateTime.now().minus({days: 14}).toISODate() }}" },
+            { "name": "limit", "value": "15" },
+            { "name": "sort", "value": "desc" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f4535f47-9d93-49d5-8183-46b1d106735f",
+      "name": "Get New Listings",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2096,
+        672
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "Immo API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "if (!items || items.length === 0) return [];\n\nconst first = items[0].json;\n\n// HTTP Request may return the array as one item OR already split into individual items\nif (Array.isArray(first)) {\n  return first.map(listing => ({ json: listing }));\n}\n\n// Already split — pass through, filter out anything without an id\nreturn items.filter(item => item.json && item.json.id);"
+      },
+      "id": "c009758e-ce14-4234-aa8e-0876dce62b8c",
+      "name": "Has Results?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1872,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a critical real estate scout for a client in [YOUR_CITY].\nYour goal: find \"gems\" (charming, small, character) and ruthlessly filter out \"concrete bunkers\".\n\nANALYZE THE FOLLOWING LISTING:\n{{ JSON.stringify($json) }}\n\nYOUR DECISION LOGIC:\n\n1. HARD FILTERS (knockout criteria):\n   - A PRIVATE balcony/terrace/loggia or PRIVATE garden MUST be present. Shared garden, courtyard, or \"shared garden use\" does NOT count. No private outdoor space → is_relevant: false.\n   - Rooms: Should be >= 2\n\n2. VIBE SCORE (1-10) — \"No large apartment blocks\":\n   - Search the listing text for hints about building size.\n   - SCORE 1-3 (reject): Words like \"residential complex\", \"high-rise\", \"large complex\", \"elevator to underground parking\" (often signals large building), \"on-site caretaker\", \"floor > 4\". Also flag districts known for prefab/social housing.\n   - SCORE 4-6 (neutral): Normal apartment building, \"well-maintained townhouse\".\n   - SCORE 7-10 (dream): \"duplex\", \"villa\", \"period building\", \"listed building\", \"in-law suite\", \"only 3 units\", \"top floor\" (without elevator often means small building).\n\nMax. [MAX_WARM_RENT] EUR warm. If score < 7, max [LOWER_MAX_RENT] EUR warm, otherwise reject.\nIf only cold rent is given, add 4 EUR per sqm to estimate warm rent.\n\n[YOUR_CITY] district guide — adjust to your city:\n[ZIP_1]: [desirable central districts]\n[ZIP_2]: [good residential districts]\n[ZIP_3]: [less desirable districts — deduct 1 point]\n[ZIP_4]: [undesirable districts — reject]\n\nOUTPUT FORMAT (respond ONLY with this JSON):\n{\n  \"is_relevant\": boolean,\n  \"score\": number,\n  \"highlights\": [\"string\", \"string\", \"string\"],\n  \"reject_reason\": \"string or null\"\n}\n\nhighlights: 3-5 short bullet points (max 8 words each) summarizing the key facts and your assessment. E.g. [\"Period building with hardwood floors\", \"Private balcony + garden\", \"Only 4 units in building\", \"Prime central location\"]\nreject_reason: If is_relevant=false, brief reason (e.g. \"No balcony\", \"Too expensive (2.1k warm)\", \"Large tower block 9th floor\"). If is_relevant=true, null."
+      },
+      "id": "6858d275-8147-40a5-9627-0bcbba28cec3",
+      "name": "AI Score",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        -1632,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-5.4",
+        "options": {}
+      },
+      "id": "3df93aa5-997c-46ad-b27b-6abdb4e21e95",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        -1632,
+        880
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "REPLACE_ME",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const listings = $('Has Results?').all();\n\nreturn items.map((item, index) => {\n  const original = listings[index]?.json || {};\n\n  try {\n    const rawString = item.json.text || item.json.output;\n    const cleanString = rawString.replace(/```json|```/g, '').trim();\n    const aiData = JSON.parse(cleanString);\n\n    const bullets = (aiData.highlights || []).map(h => `• ${h}`).join('\\n');\n\n    const d = { ...original, ...aiData };\n    const price = d.warm_rent || d.cold_rent || '?';\n    const loc = [d.city, d.zip_code, d.district].filter(Boolean).join(' ');\n\n    d.tg_message = [\n      `🏠 <b>${d.title || ''}</b>`,\n      `📍 ${loc}`,\n      '',\n      `💶 ${price} € warm`,\n      `🚪 ${d.rooms || '?'} rooms  |  📐 ${d.living_space || '?'} m²`,\n      `⭐ <b>Score: ${d.score}/10</b>`,\n      '',\n      bullets,\n      '',\n      `🔗 <a href=\"${d.url}\">View listing (${d.portal})</a>`,\n    ].join('\\n');\n\n    return { json: d };\n  } catch (error) {\n    return { json: { ...original, is_relevant: false, score: 0, reject_reason: 'AI parse error', tg_message: 'Error' } };\n  }\n});"
+      },
+      "id": "3d72c7c0-efad-41f7-b288-f116056695b6",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1392,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "filter-relevant",
+              "leftValue": "={{ $json.is_relevant }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "574e9663-cfec-435f-a32c-5b2f203d23f7",
+      "name": "If Relevant",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1152,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "={{ $json.tg_message }}",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "86ac0972-bd3b-4c0a-aed6-6b8b3df0eb31",
+      "name": "Send Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [
+        -912,
+        560
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://immo.example.com/listings/{{ $('Parse AI Response').item.json.id }}/seen",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "d9a657b1-f931-45a1-b2bf-c502333d9751",
+      "name": "Mark as Seen",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -912,
+        800
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "Immo API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://immo.example.com/listings/{{ $('Parse AI Response').item.json.id }}/sent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "4df8db2a-8ca4-43db-9235-a757dfa1e9e7",
+      "name": "Mark as Sent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -672,
+        560
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "Immo API"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get New Listings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get New Listings": {
+      "main": [
+        [
+          {
+            "node": "Has Results?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Results?": {
+      "main": [
+        [
+          {
+            "node": "AI Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Score": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Score",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "If Relevant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Relevant": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark as Seen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Telegram": {
+      "main": [
+        [
+          {
+            "node": "Mark as Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {},
+  "tags": []
+}
