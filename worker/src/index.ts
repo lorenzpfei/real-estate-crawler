@@ -132,26 +132,27 @@ async function handleStatusUpdate(
     return json({ ok: true });
   }
 
-  // seen: update existing row
-  const res = await fetch(
-    `${env.SUPABASE_URL}/rest/v1/listing_user_status?listing_id=eq.${encodeURIComponent(listingId)}&user_id=eq.${userId}`,
-    {
-      method: "PATCH",
-      headers: {
-        ...sbHeaders(env),
-        "Content-Type": "application/json",
-        Prefer: "return=minimal",
-      },
-      body: JSON.stringify({ seen_at: now }),
-    }
-  );
+  // seen: upsert row with seen_at (marks as processed without counting as sent)
+  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/listing_user_status`, {
+    method: "POST",
+    headers: {
+      ...sbHeaders(env),
+      "Content-Type": "application/json",
+      Prefer: "resolution=merge-duplicates",
+    },
+    body: JSON.stringify({
+      listing_id: listingId,
+      user_id: parseInt(userId),
+      seen_at: now,
+    }),
+  });
   if (!res.ok) return json({ error: "Database error", detail: await res.text() }, 502);
   return json({ ok: true });
 }
 
 async function getSentIds(userId: string, env: Env): Promise<string[]> {
   const res = await fetch(
-    `${env.SUPABASE_URL}/rest/v1/listing_user_status?user_id=eq.${userId}&sent_at=not.is.null&select=listing_id&limit=5000`,
+    `${env.SUPABASE_URL}/rest/v1/listing_user_status?user_id=eq.${userId}&seen_at=not.is.null&select=listing_id&limit=5000`,
     sbInit(env)
   );
   if (!res.ok) return [];
