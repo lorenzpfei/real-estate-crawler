@@ -117,19 +117,57 @@ async def search(
         hard_facts = item.get("hardFacts", {})
         title = hard_facts.get("title", "")
 
-        # Price
-        price_str = hard_facts.get("price", {}).get("value", "")
-        price = _parse_price(price_str)
+        # Prices — parse labeled entries (Kaltmiete / Warmmiete / Nebenkosten)
+        cold_rent: float | None = None
+        warm_rent: float | None = None
+        extra_costs: float | None = None
+        buy_price: float | None = None
+        for p in hard_facts.get("prices", []):
+            label = p.get("label", "")
+            val = _parse_price(p.get("value", ""))
+            if "Kaltmiete" in label or "Kaufpreis" in label:
+                if is_rent:
+                    cold_rent = val
+                else:
+                    buy_price = val
+            elif "Warmmiete" in label:
+                warm_rent = val
+            elif "Nebenkosten" in label or "Betriebskosten" in label:
+                extra_costs = val
+            elif "Hausgeld" in label:
+                extra_costs = val
 
-        # Price per sqm from additionalInformation
+        # Fallback: main price field
+        if cold_rent is None and warm_rent is None and buy_price is None:
+            main_val = _parse_price(hard_facts.get("price", {}).get("value", ""))
+            addition = hard_facts.get("price", {}).get("addition", {}).get("value", "")
+            if "Warm" in addition:
+                warm_rent = main_val
+            elif not is_rent:
+                buy_price = main_val
+            else:
+                cold_rent = main_val
+
+        # Price per sqm
         ppsqm_str = hard_facts.get("price", {}).get("additionalInformation", "")
-        price_per_sqm = _parse_price(ppsqm_str) if ppsqm_str else None
+        price_per_sqm = _parse_price(ppsqm_str) if ppsqm_str and "€" in ppsqm_str else None
 
-        # Facts (rooms, living space, plot space)
+        # Facts (rooms, living space, plot space, floor, availability)
         facts = hard_facts.get("facts", [])
         rooms = _parse_price(_get_fact(facts, "numberOfRooms"))
         living_space = _parse_price(_get_fact(facts, "livingSpace"))
         plot_space = _parse_price(_get_fact(facts, "plotSpace"))
+        floor_raw = _parse_price(_get_fact(facts, "numberOfFloors"))
+        floor = int(floor_raw) if floor_raw is not None else None
+        # availability fact: splitValue="frei", label="ab 01.09.2026" or "ab sofort"
+        available_from = ""
+        for f in facts:
+            if f.get("type") == "availability":
+                available_from = f.get("label", "")
+                break
+
+        # Property sub-type from rawData
+        property_type = item.get("rawData", {}).get("propertySubType", "")
 
         # Location
         loc = item.get("location", {}).get("address", {})
@@ -177,12 +215,17 @@ async def search(
                 portal="immowelt",
                 title=title,
                 url=url,
-                buy_price=price if not is_rent else None,
-                cold_rent=price if is_rent else None,
+                buy_price=buy_price,
+                cold_rent=cold_rent,
+                warm_rent=warm_rent,
+                extra_costs=extra_costs,
                 price_per_sqm=price_per_sqm,
                 rooms=rooms,
                 living_space=living_space,
                 plot_space=plot_space,
+                floor=floor,
+                property_type=property_type,
+                available_from=available_from,
                 listing_type="rent" if is_rent else "buy",
                 city=city,
                 zip_code=zip_code,

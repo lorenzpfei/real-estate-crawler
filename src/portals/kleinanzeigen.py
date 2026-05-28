@@ -75,6 +75,13 @@ async def search(
     # Determine listing_type from category
     is_rent = category_id in ("203", "205")
 
+    _PREFIX_MAP = {
+        "203": "wohnung_mieten",
+        "205": "haus_mieten",
+        "196": "wohnung_kaufen",
+        "208": "haus_kaufen",
+    }
+
     listings: list[Listing] = []
     for ad in ad_list:
         if ad.get("ad-type", {}).get("value", "") != "OFFERED":
@@ -99,13 +106,44 @@ async def search(
         lat = _safe_float(addr.get("latitude", {}).get("value"))
         lon = _safe_float(addr.get("longitude", {}).get("value"))
 
-        # Attributes – try both rent and buy prefixes
-        prefix = "wohnung_mieten" if category_id == "203" else "haus_mieten" if category_id == "205" else ""
+        # Attributes – map category to attribute prefix
+        prefix = _PREFIX_MAP.get(category_id, "")
         rooms = _safe_float(_get_attr(ad, f"{prefix}.zimmer")) if prefix else None
         living_space = _safe_float(_get_attr(ad, f"{prefix}.qm")) if prefix else None
         floor = _safe_int(_get_attr(ad, f"{prefix}.etage")) if prefix else None
         bedrooms = _safe_float(_get_attr(ad, f"{prefix}.schlafzimmer")) if prefix else None
         bathrooms = _safe_float(_get_attr(ad, f"{prefix}.badezimmer")) if prefix else None
+
+        # Extra costs, deposit, warm rent
+        extra_costs = _safe_float(_get_attr(ad, f"{prefix}.nebenkosten")) if prefix else None
+        deposit = _safe_float(_get_attr(ad, f"{prefix}.kaution")) if prefix else None
+        warm_rent = _safe_float(_get_attr(ad, f"{prefix}.warmmiete")) if prefix and is_rent else None
+
+        # Buy-only fields
+        hausgeld = _safe_float(_get_attr(ad, f"{prefix}.hausgeld")) if prefix and not is_rent else None
+
+        # Building
+        year_built = _safe_int(_get_attr(ad, f"{prefix}.baujahr")) if prefix else None
+        plot_space = _safe_float(_get_attr(ad, f"{prefix}.grundstuecksflaeche")) if prefix else None
+        total_floors = _safe_int(_get_attr(ad, f"{prefix}.anzahl_etagen")) if prefix else None
+
+        # Amenities
+        def _is_true(val: str | None) -> bool:
+            return (val or "").lower() in ("true", "1", "yes")
+
+        has_balcony = (
+            _is_true(_get_attr(ad, f"{prefix}.balcony"))
+            or _is_true(_get_attr(ad, f"{prefix}.terrace"))
+        ) if prefix else None
+        has_garden = _is_true(_get_attr(ad, f"{prefix}.garden")) if prefix else None
+        has_fitted_kitchen = _is_true(_get_attr(ad, f"{prefix}.built_in_kitchen")) if prefix else None
+        has_cellar = _is_true(_get_attr(ad, f"{prefix}.celler_loft")) if prefix else None
+        has_parking = _is_true(_get_attr(ad, f"{prefix}.garage")) if prefix else None
+        has_elevator = _is_true(_get_attr(ad, f"{prefix}.lift")) if prefix else None
+        pets_allowed = _is_true(_get_attr(ad, f"{prefix}.pets_allowed")) if prefix else None
+
+        # Available from
+        available_from = _get_attr(ad, f"{prefix}.verfuegbardate") if prefix else None
 
         # Property type
         property_type = ""
@@ -147,11 +185,26 @@ async def search(
                 url=url,
                 buy_price=price if not is_rent else None,
                 cold_rent=price if is_rent else None,
+                warm_rent=warm_rent,
+                extra_costs=extra_costs,
+                deposit=deposit,
+                hausgeld=hausgeld,
                 rooms=rooms,
                 living_space=living_space,
+                plot_space=plot_space,
                 floor=floor,
+                total_floors=total_floors,
                 bedrooms=bedrooms,
                 bathrooms=bathrooms,
+                year_built=year_built,
+                has_balcony=has_balcony if has_balcony else None,
+                has_garden=has_garden if has_garden else None,
+                has_fitted_kitchen=has_fitted_kitchen if has_fitted_kitchen else None,
+                has_cellar=has_cellar if has_cellar else None,
+                has_parking=has_parking if has_parking else None,
+                has_elevator=has_elevator if has_elevator else None,
+                pets_allowed=pets_allowed if pets_allowed else None,
+                available_from=available_from,
                 property_type=property_type,
                 listing_type="rent" if is_rent else "buy",
                 city=city,
