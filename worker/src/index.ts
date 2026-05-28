@@ -38,10 +38,13 @@ export default {
     }
 
     // GET /listings
+    const skipCache = url.searchParams.get("unsent") === "true";
     const cacheKey = new Request(`https://cache${url.pathname}?${url.searchParams}&_u=${userId}`);
     const cache = caches.default;
-    const cached = await cache.match(cacheKey);
-    if (cached) return cached;
+    if (!skipCache) {
+      const cached = await cache.match(cacheKey);
+      if (cached) return cached;
+    }
 
     const format = url.searchParams.get("format") === "csv" ? "csv" : "json";
     const rawLimit = url.searchParams.has("limit") ? parseInt(url.searchParams.get("limit")!) : null;
@@ -99,7 +102,7 @@ export default {
     }
 
     const response = new Response(body, { status: 200, headers });
-    ctx.waitUntil(cache.put(cacheKey, response.clone()));
+    if (!skipCache) ctx.waitUntil(cache.put(cacheKey, response.clone()));
     return response;
   },
 };
