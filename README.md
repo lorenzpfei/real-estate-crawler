@@ -1,5 +1,7 @@
 # real-estate-crawler
 
+> **Disclaimer:** This project is intended for personal, non-commercial, and academic research purposes only. Automated access to the portals listed below may violate their respective Terms of Service. By using this software, you accept full responsibility for ensuring your use complies with all applicable terms, laws, and regulations. The authors do not condone any use that infringes on third-party rights or ToS.
+
 Async Python scraper that monitors German real estate portals for new listings. Uses mobile APIs exclusively – no headless browser needed. New listings are enriched via GPT and stored in PostgreSQL.
 
 ## Portals
