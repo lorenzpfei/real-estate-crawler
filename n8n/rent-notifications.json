@@ -1,5 +1,5 @@
 {
-  "name": "Immo Crawler – Rent Notifications",
+  "name": "Real Estate Crawler – Rent Notifications",
   "nodes": [
     {
       "parameters": {
@@ -23,7 +23,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "https://immo.example.com/listings",
+        "url": "https://listings.example.com/listings",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendQuery": true,
@@ -51,7 +51,7 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "REPLACE_ME",
-          "name": "Immo API"
+          "name": "Real Estate API"
         }
       }
     },
@@ -174,7 +174,7 @@
     {
       "parameters": {
         "method": "PATCH",
-        "url": "=https://immo.example.com/listings/{{ $('Parse AI Response').item.json.id }}/seen",
+        "url": "=https://listings.example.com/listings/{{ $('Parse AI Response').item.json.id }}/seen",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {}
@@ -190,14 +190,14 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "REPLACE_ME",
-          "name": "Immo API"
+          "name": "Real Estate API"
         }
       }
     },
     {
       "parameters": {
         "method": "PATCH",
-        "url": "=https://immo.example.com/listings/{{ $('Parse AI Response').item.json.id }}/sent",
+        "url": "=https://listings.example.com/listings/{{ $('Parse AI Response').item.json.id }}/sent",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {}
@@ -213,7 +213,7 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "REPLACE_ME",
-          "name": "Immo API"
+          "name": "Real Estate API"
         }
       }
     }

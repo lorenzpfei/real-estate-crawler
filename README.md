@@ -1,4 +1,4 @@
-# immo-crawler
+# real-estate-crawler
 
 Async Python scraper that monitors German real estate portals for new listings. Uses mobile APIs exclusively – no headless browser needed. New listings are enriched via GPT and stored in PostgreSQL.
 
@@ -174,7 +174,7 @@ Update the route in `worker/wrangler.jsonc` to your domain:
 
 ```jsonc
 "routes": [
-  { "pattern": "immo.yourdomain.com/*", "zone_name": "yourdomain.com" }
+  { "pattern": "listings.yourdomain.com/*", "zone_name": "yourdomain.com" }
 ]
 ```
 
@@ -197,7 +197,7 @@ SELECT name, api_key FROM users;
 
 ## API
 
-Base URL: `https://immo.example.com`
+Base URL: `https://listings.example.com`
 
 All endpoints require authentication via the `X-API-Key` header.
 
@@ -238,16 +238,16 @@ Results are ordered by `timestamp` descending. Responses are cached for 5 minute
 
 ```bash
 # All rent listings with ≥3 rooms
-curl -H "X-API-Key: <key>" "https://immo.example.com/listings?listing_type=rent&min_rooms=3"
+curl -H "X-API-Key: <key>" "https://listings.example.com/listings?listing_type=rent&min_rooms=3"
 
 # Buy listings under 400k as CSV
-curl -H "X-API-Key: <key>" "https://immo.example.com/listings?listing_type=buy&max_price=400000&format=csv" -o listings.csv
+curl -H "X-API-Key: <key>" "https://listings.example.com/listings?listing_type=buy&max_price=400000&format=csv" -o listings.csv
 
 # Listings crawled today
-curl -H "X-API-Key: <key>" "https://immo.example.com/listings?since=2026-05-27"
+curl -H "X-API-Key: <key>" "https://listings.example.com/listings?since=2026-05-27"
 
 # Paginate through all results
-curl -H "X-API-Key: <key>" "https://immo.example.com/listings?limit=1000&offset=1000"
+curl -H "X-API-Key: <key>" "https://listings.example.com/listings?limit=1000&offset=1000"
 ```
 
 **Error Responses**
@@ -266,7 +266,7 @@ curl -H "X-API-Key: <key>" "https://immo.example.com/listings?limit=1000&offset=
 Marks a listing as sent (and seen) for the authenticated user. Creates the record if it doesn't exist yet.
 
 ```bash
-curl -X PATCH -H "X-API-Key: <key>" "https://immo.example.com/listings/ka-12345/sent"
+curl -X PATCH -H "X-API-Key: <key>" "https://listings.example.com/listings/ka-12345/sent"
 # → {"ok":true}
 ```
 
@@ -277,7 +277,7 @@ curl -X PATCH -H "X-API-Key: <key>" "https://immo.example.com/listings/ka-12345/
 Marks a listing as seen for the authenticated user. Updates the `seen_at` timestamp on an existing record.
 
 ```bash
-curl -X PATCH -H "X-API-Key: <key>" "https://immo.example.com/listings/ka-12345/seen"
+curl -X PATCH -H "X-API-Key: <key>" "https://listings.example.com/listings/ka-12345/seen"
 # → {"ok":true}
 ```
 
@@ -288,5 +288,5 @@ curl -X PATCH -H "X-API-Key: <key>" "https://immo.example.com/listings/ka-12345/
 Returns only listings that have not yet been sent to the authenticated user. Supports all the same filters as `GET /listings`.
 
 ```bash
-curl -H "X-API-Key: <key>" "https://immo.example.com/listings?unsent=true&listing_type=rent"
+curl -H "X-API-Key: <key>" "https://listings.example.com/listings?unsent=true&listing_type=rent"
 ```

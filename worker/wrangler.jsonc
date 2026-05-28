@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "immo-crawler-api",
+  "name": "real-estate-crawler-api",
   "main": "src/index.ts",
   "compatibility_date": "2026-05-27",
 
@@ -13,7 +13,7 @@
   },
 
   "routes": [
-    { "pattern": "immo.example.com/*", "zone_name": "example.com" }
+    { "pattern": "listings.example.com/*", "zone_name": "example.com" }
   ]
 
   // Secrets (set via: pnpm wrangler secret put SUPABASE_SERVICE_ROLE_KEY)
