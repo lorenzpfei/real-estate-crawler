@@ -12,6 +12,13 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.kleinanzeigen.de/api/ads.json"
 
+PREFIX_MAP = {
+    "203": "wohnung_mieten",
+    "205": "haus_mieten",
+    "196": "wohnung_kaufen",
+    "208": "haus_kaufen",
+}
+
 HEADERS = {
     "Authorization": f"Basic {os.getenv('KA_AUTH', '')}",
     "User-Agent": os.getenv("KA_USER_AGENT", "okhttp/4.10.0"),
@@ -75,13 +82,6 @@ async def search(
     # Determine listing_type from category
     is_rent = category_id in ("203", "205")
 
-    _PREFIX_MAP = {
-        "203": "wohnung_mieten",
-        "205": "haus_mieten",
-        "196": "wohnung_kaufen",
-        "208": "haus_kaufen",
-    }
-
     listings: list[Listing] = []
     for ad in ad_list:
         if ad.get("ad-type", {}).get("value", "") != "OFFERED":
@@ -107,7 +107,7 @@ async def search(
         lon = _safe_float(addr.get("longitude", {}).get("value"))
 
         # Attributes – map category to attribute prefix
-        prefix = _PREFIX_MAP.get(category_id, "")
+        prefix = PREFIX_MAP.get(category_id, "")
         rooms = _safe_float(_get_attr(ad, f"{prefix}.zimmer")) if prefix else None
         living_space = _safe_float(_get_attr(ad, f"{prefix}.qm")) if prefix else None
         floor = _safe_int(_get_attr(ad, f"{prefix}.etage")) if prefix else None
