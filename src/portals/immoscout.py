@@ -86,6 +86,14 @@ def _parse_expose(data: dict) -> dict:
         "bedrooms": None,
         "bathrooms": None,
         "property_type": "",
+        "plot_space": None,
+        "available_from": "",
+        "has_balcony": None,
+        "has_cellar": None,
+        "has_fitted_kitchen": None,
+        "has_parking": None,
+        "has_elevator": None,
+        "pets_allowed": None,
         "year_built": None,
         "year_renovated": None,
         "condition": "",
@@ -123,6 +131,8 @@ def _parse_expose(data: dict) -> dict:
                     result["rooms"] = _parse_price(text)
                 elif "Wohnfläche" in label:
                     result["living_space"] = _parse_price(text)
+                elif "Grundstück" in label:
+                    result["plot_space"] = _parse_price(text)
                 elif "Warmmiete" in label:
                     result["warm_rent"] = _parse_price(text)
                 elif "Kaltmiete" in label or "Kaufpreis" in label:
@@ -140,12 +150,55 @@ def _parse_expose(data: dict) -> dict:
                 result["bedrooms"] = _parse_price(_find_attr(attrs, "Schlafzimmer"))
                 result["bathrooms"] = _parse_price(_find_attr(attrs, "Badezimmer"))
 
+                # Etage: "2 von 5" → floor=2, total_floors=5
                 floor_str = _find_attr(attrs, "Etage")
                 if floor_str:
                     parts = floor_str.split(" von ")
                     result["floor"] = _parse_price(parts[0])
                     if len(parts) > 1:
                         result["total_floors"] = _parse_price(parts[1])
+
+                # Etagenzahl for houses (total floors without current floor context)
+                etagen_str = _find_attr(attrs, "Etagenzahl")
+                if etagen_str:
+                    result["total_floors"] = _parse_price(etagen_str)
+
+                # Grundstücksfläche (houses)
+                plot_str = _find_attr(attrs, "Grundstücksfläche")
+                if plot_str:
+                    result["plot_space"] = _parse_price(plot_str)
+
+                # Available from
+                avail = _find_attr(attrs, "Bezugsfrei ab") or _find_attr(attrs, "Verfügbar ab")
+                if avail:
+                    result["available_from"] = avail
+
+                # Pets: "" = attr not present; None = present but unset; str = explicit value
+                pets_str = _find_attr(attrs, "Haustiere")
+                if pets_str != "":
+                    if pets_str:
+                        result["pets_allowed"] = pets_str.lower() not in ("nein", "nein.", "keine haustiere")
+
+                # Parking: explicit 0 = False; any text = True
+                anzahl_str = _find_attr(attrs, "Anzahl Garage/Stellplatz")
+                garage_str = _find_attr(attrs, "Garage/Stellplatz")
+                if anzahl_str == "0":
+                    result["has_parking"] = False
+                elif garage_str or (anzahl_str and anzahl_str != "0"):
+                    result["has_parking"] = True
+
+                # Elevator, balcony, cellar, kitchen: non-None text = True; None = unknown
+                lift_str = _find_attr(attrs, "Personenaufzug")
+                result["has_elevator"] = True if lift_str else None
+
+                balcony_str = _find_attr(attrs, "Balkon")
+                result["has_balcony"] = True if balcony_str else None
+
+                cellar_str = _find_attr(attrs, "Keller")
+                result["has_cellar"] = True if cellar_str else None
+
+                kitchen_str = _find_attr(attrs, "Einbauküche")
+                result["has_fitted_kitchen"] = True if kitchen_str else None
 
             elif "Kosten" in title:
                 cold = _find_attr(attrs, "Kaltmiete")
@@ -309,11 +362,19 @@ async def search(
                 original_price=detail.get("original_price"),
                 rooms=detail.get("rooms"),
                 living_space=detail.get("living_space"),
+                plot_space=detail.get("plot_space"),
                 floor=int(detail["floor"]) if detail.get("floor") else None,
                 total_floors=int(detail["total_floors"]) if detail.get("total_floors") else None,
                 bedrooms=detail.get("bedrooms"),
                 bathrooms=detail.get("bathrooms"),
                 property_type=detail.get("property_type", ""),
+                available_from=detail.get("available_from", ""),
+                has_balcony=detail.get("has_balcony"),
+                has_cellar=detail.get("has_cellar"),
+                has_fitted_kitchen=detail.get("has_fitted_kitchen"),
+                has_parking=detail.get("has_parking"),
+                has_elevator=detail.get("has_elevator"),
+                pets_allowed=detail.get("pets_allowed"),
                 listing_type="rent" if is_rent else "buy",
                 city=city,
                 zip_code=zip_code,

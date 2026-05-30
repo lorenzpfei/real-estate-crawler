@@ -94,27 +94,23 @@ async def enrich_listing(client: httpx.AsyncClient, listing: Listing) -> Listing
         clean = raw.strip().removeprefix("```json").removesuffix("```").strip()
         extracted = json.loads(clean)
 
-        # Apply extracted fields
-        if extracted.get("has_balcony") is not None:
-            listing.has_balcony = extracted["has_balcony"]
-        if extracted.get("has_garden") is not None:
-            listing.has_garden = extracted["has_garden"]
-        if extracted.get("has_parking") is not None:
-            listing.has_parking = extracted["has_parking"]
-        if extracted.get("has_elevator") is not None:
-            listing.has_elevator = extracted["has_elevator"]
-        if extracted.get("has_cellar") is not None:
-            listing.has_cellar = extracted["has_cellar"]
-        if extracted.get("has_fitted_kitchen") is not None:
-            listing.has_fitted_kitchen = extracted["has_fitted_kitchen"]
-        if extracted.get("num_units_in_building") is not None:
-            listing.num_units_in_building = extracted["num_units_in_building"]
-        if extracted.get("available_from"):
+        # Apply extracted fields — only fill fields the portal didn't already set
+        def _apply(field: str, value) -> None:
+            if value is not None and getattr(listing, field) is None:
+                setattr(listing, field, value)
+
+        _apply("has_balcony", extracted.get("has_balcony"))
+        _apply("has_garden", extracted.get("has_garden"))
+        _apply("has_parking", extracted.get("has_parking"))
+        _apply("has_elevator", extracted.get("has_elevator"))
+        _apply("has_cellar", extracted.get("has_cellar"))
+        _apply("has_fitted_kitchen", extracted.get("has_fitted_kitchen"))
+        _apply("num_units_in_building", extracted.get("num_units_in_building"))
+        _apply("pets_allowed", extracted.get("pets_allowed"))
+        _apply("is_temporary", extracted.get("is_temporary"))
+        # available_from: check empty string too
+        if extracted.get("available_from") and not listing.available_from:
             listing.available_from = extracted["available_from"]
-        if extracted.get("pets_allowed") is not None:
-            listing.pets_allowed = extracted["pets_allowed"]
-        if extracted.get("is_temporary") is not None:
-            listing.is_temporary = extracted["is_temporary"]
 
         logger.debug("Enriched %s: %s", listing.id, extracted)
 

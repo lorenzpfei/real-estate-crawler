@@ -122,6 +122,11 @@ async def search(
         # Buy-only fields
         hausgeld = _safe_float(_get_attr(ad, f"{prefix}.hausgeld")) if prefix and not is_rent else None
 
+        # Compute price_per_sqm for buy listings when not provided
+        price_per_sqm: float | None = None
+        if not is_rent and price and living_space:
+            price_per_sqm = round(price / living_space, 2)
+
         # Building
         year_built = _safe_int(_get_attr(ad, f"{prefix}.baujahr")) if prefix else None
         plot_space = _safe_float(_get_attr(ad, f"{prefix}.grundstuecksflaeche")) if prefix else None
@@ -186,6 +191,7 @@ async def search(
                 buy_price=price if not is_rent else None,
                 cold_rent=price if is_rent else None,
                 warm_rent=warm_rent,
+                price_per_sqm=price_per_sqm,
                 extra_costs=extra_costs,
                 deposit=deposit,
                 hausgeld=hausgeld,
